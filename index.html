@@ -230,7 +230,7 @@
     #confirm-btn:active { transform: scale(0.97); }
     #confirm-btn:disabled { background: var(--inactive); color: #64748b; cursor: not-allowed; transform: none; }
 
-    #skip-btn {
+    #skip-btn, #hint-btn {
       flex: 0 0 auto;
       padding: 10px 14px;
       font-size: 14px;
@@ -242,7 +242,41 @@
       cursor: pointer;
       white-space: nowrap;
     }
-    #skip-btn:active { transform: scale(0.97); }
+    #skip-btn:active, #hint-btn:active { transform: scale(0.97); }
+    #hint-btn { background: #3b2f0a; border-color: #a16207; color: #fde68a; }
+
+    .player-tag .hints { font-size: 12px; color: #94a3b8; flex: 0 0 auto; }
+
+    .hidden { display: none !important; }
+    #hint-box {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-height: 56px;
+      padding: 6px 10px;
+      background: #0d1b2e;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+    #hint-box img {
+      height: 48px;
+      width: auto;
+      border-radius: 4px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.5);
+    }
+    #hint-box .hint-tag { font-size: 13px; color: #fde68a; font-weight: 700; }
+    .hint-slots { display: flex; flex-direction: row; gap: 6px; }
+    .hint-slot {
+      min-width: 18px;
+      text-align: center;
+      font-size: 20px; font-weight: 800; color: #e2e8f0;
+      border-bottom: 3px solid #64748b;
+      line-height: 1.4;
+    }
+    .hint-slot.space { border-bottom: none; min-width: 8px; }
+
+    .card-hints { font-size: 13px; color: #fde68a; margin-top: 4px; }
 
     #mic-btn {
       flex: 0 0 auto;
@@ -366,6 +400,7 @@
           <span class="dot"></span>
           <span class="name" id="hname1">שחקן 1</span>
           <span class="score" id="score1">0</span>
+          <span class="hints" id="hints1" title="רמזים שניתנו">💡0</span>
         </div>
         <div id="remaining" title="מדינות שעוד לא זוהו">
           <span id="remaining-num">177</span>
@@ -375,6 +410,7 @@
           <span class="dot"></span>
           <span class="name" id="hname2">שחקן 2</span>
           <span class="score" id="score2">0</span>
+          <span class="hints" id="hints2" title="רמזים שניתנו">💡0</span>
         </div>
       </div>
 
@@ -388,6 +424,7 @@
       <div id="map-wrap"></div>
 
       <div id="panel">
+        <div id="hint-box" class="hidden"></div>
         <div id="input-row">
           <button id="mic-btn" aria-label="מיקרופון">🎤</button>
           <input id="word-input" type="text" autocomplete="off" placeholder="אמור/י או הקלד/י שם של מדינה">
@@ -398,6 +435,7 @@
             <div id="feedback"></div>
             <div id="status-text">לחץ על המיקרופון כדי להתחיל</div>
           </div>
+          <button id="hint-btn" aria-label="רמז">רמז 💡</button>
           <button id="skip-btn" aria-label="דלג תור">דלג ⏭</button>
         </div>
       </div>
@@ -411,10 +449,12 @@
           <div class="score-card p1">
             <div class="card-name" id="end-name1">שחקן 1</div>
             <div class="card-score" id="end-score1">0</div>
+            <div class="card-hints" id="end-hints1">💡 0 רמזים</div>
           </div>
           <div class="score-card p2">
             <div class="card-name" id="end-name2">שחקן 2</div>
             <div class="card-score" id="end-score2">0</div>
+            <div class="card-hints" id="end-hints2">💡 0 רמזים</div>
           </div>
         </div>
         <div class="country-lists">
@@ -798,6 +838,7 @@
     let currentPlayer = 0;           // 0 or 1
     let guessed = [{}, {}];          // guessed[p][engName] = true (a country can be taken once, by either player)
     let consecutiveSkips = 0;        // skips in a row (2 in a row ends the game)
+    let hintCount = [0, 0];          // number of hints each player has requested
     let recognition = null;          // SpeechRecognition instance
     let listening = false;
     let turnResolved = false;        // true once the current turn ends (success / skip)
@@ -848,6 +889,114 @@
       document.getElementById('area-label1').textContent = (p1 < 10 ? p1.toFixed(1) : Math.round(p1)) + '%';
       document.getElementById('area-label2').textContent = (p2 < 10 ? p2.toFixed(1) : Math.round(p2)) + '%';
     }
+
+    // ===== Hints =====
+    // English GeoJSON name -> flagcdn code (ISO-3166-1 alpha-2, plus UK subunits).
+    // null = no flag available; those countries only ever get the letter hint.
+    const NAME2ISO = {
+      "Afghanistan":"af","Albania":"al","Algeria":"dz","Angola":"ao","Antarctica":null,
+      "Argentina":"ar","Armenia":"am","Australia":"au","Austria":"at","Azerbaijan":"az",
+      "Bangladesh":"bd","Belarus":"by","Belgium":"be","Belize":"bz","Benin":"bj","Bhutan":"bt",
+      "Bolivia":"bo","Bosnia and Herzegovina":"ba","Botswana":"bw","Brazil":"br","Brunei":"bn",
+      "Bulgaria":"bg","Burkina Faso":"bf","Burundi":"bi","Cambodia":"kh","Cameroon":"cm",
+      "Canada":"ca","Central African Republic":"cf","Chad":"td","Chile":"cl","China":"cn",
+      "Colombia":"co","Costa Rica":"cr","Croatia":"hr","Cuba":"cu","Cyprus":"cy",
+      "Czech Republic":"cz","Democratic Republic of the Congo":"cd","Denmark":"dk","Djibouti":"dj",
+      "Dominican Republic":"do","East Timor":"tl","Ecuador":"ec","Egypt":"eg","El Salvador":"sv",
+      "England":"gb-eng","Equatorial Guinea":"gq","Eritrea":"er","Estonia":"ee","Ethiopia":"et",
+      "Falkland Islands":"fk","Fiji":"fj","Finland":"fi","France":"fr",
+      "French Southern and Antarctic Lands":"tf","Gabon":"ga","Gambia":"gm","Georgia":"ge",
+      "Germany":"de","Ghana":"gh","Greece":"gr","Greenland":"gl","Guatemala":"gt","Guinea":"gn",
+      "Guinea Bissau":"gw","Guyana":"gy","Haiti":"ht","Honduras":"hn","Hungary":"hu","Iceland":"is",
+      "India":"in","Indonesia":"id","Iran":"ir","Iraq":"iq","Ireland":"ie","Israel":"il","Italy":"it",
+      "Ivory Coast":"ci","Jamaica":"jm","Japan":"jp","Jordan":"jo","Kazakhstan":"kz","Kenya":"ke",
+      "Kosovo":"xk","Kuwait":"kw","Kyrgyzstan":"kg","Laos":"la","Latvia":"lv","Lebanon":"lb",
+      "Lesotho":"ls","Liberia":"lr","Libya":"ly","Lithuania":"lt","Luxembourg":"lu","Macedonia":"mk",
+      "Madagascar":"mg","Malawi":"mw","Malaysia":"my","Mali":"ml","Mauritania":"mr","Mexico":"mx",
+      "Moldova":"md","Mongolia":"mn","Montenegro":"me","Morocco":"ma","Mozambique":"mz","Myanmar":"mm",
+      "Namibia":"na","Nepal":"np","Netherlands":"nl","New Caledonia":"nc","New Zealand":"nz",
+      "Nicaragua":"ni","Niger":"ne","Nigeria":"ng","North Korea":"kp","Northern Cyprus":null,
+      "Norway":"no","Oman":"om","Pakistan":"pk","Panama":"pa","Papua New Guinea":"pg","Paraguay":"py",
+      "Peru":"pe","Philippines":"ph","Poland":"pl","Portugal":"pt","Puerto Rico":"pr","Qatar":"qa",
+      "Republic of Serbia":"rs","Republic of the Congo":"cg","Romania":"ro","Russia":"ru","Rwanda":"rw",
+      "Saudi Arabia":"sa","Senegal":"sn","Sierra Leone":"sl","Slovakia":"sk","Slovenia":"si",
+      "Solomon Islands":"sb","Somalia":"so","Somaliland":null,"South Africa":"za","South Korea":"kr",
+      "South Sudan":"ss","Spain":"es","Sri Lanka":"lk","Sudan":"sd","Suriname":"sr","Swaziland":"sz",
+      "Sweden":"se","Switzerland":"ch","Syria":"sy","Taiwan":"tw","Tajikistan":"tj","Thailand":"th",
+      "The Bahamas":"bs","Togo":"tg","Trinidad and Tobago":"tt","Tunisia":"tn","Turkey":"tr",
+      "Turkmenistan":"tm","USA":"us","Uganda":"ug","Ukraine":"ua","United Arab Emirates":"ae",
+      "United Republic of Tanzania":"tz","Uruguay":"uy","Uzbekistan":"uz","Vanuatu":"vu",
+      "Venezuela":"ve","Vietnam":"vn","West Bank":"ps","Western Sahara":"eh","Yemen":"ye",
+      "Zambia":"zm","Zimbabwe":"zw","Scotland":"gb-sct","Wales":"gb-wls","Northern Ireland":"gb-nir"
+    };
+
+    function updateHintCounters() {
+      document.getElementById('hints1').textContent = '💡' + hintCount[0];
+      document.getElementById('hints2').textContent = '💡' + hintCount[1];
+    }
+    function clearHint() {
+      const box = document.getElementById('hint-box');
+      box.classList.add('hidden');
+      box.innerHTML = '';
+    }
+    // Country name as letter slots: first letter shown, the rest blank underscores.
+    function showLetterHint(engName) {
+      const heb = E2H[engName] || engName;
+      const box = document.getElementById('hint-box');
+      const slots = document.createElement('div');
+      slots.className = 'hint-slots';
+      let firstShown = false;
+      for (const ch of heb) {
+        const slot = document.createElement('div');
+        if (ch === ' ') {
+          slot.className = 'hint-slot space';
+        } else {
+          slot.className = 'hint-slot';
+          if (!firstShown) { slot.textContent = ch; firstShown = true; }
+          else { slot.innerHTML = '&nbsp;'; }
+        }
+        slots.appendChild(slot);
+      }
+      box.innerHTML = '';
+      const tag = document.createElement('span');
+      tag.className = 'hint-tag';
+      tag.textContent = '🔤';
+      box.appendChild(tag);
+      box.appendChild(slots);
+      box.classList.remove('hidden');
+    }
+    function showFlagHint(engName, iso) {
+      const box = document.getElementById('hint-box');
+      box.innerHTML = '';
+      const tag = document.createElement('span');
+      tag.className = 'hint-tag';
+      tag.textContent = '🚩';
+      const img = document.createElement('img');
+      img.alt = 'דגל';
+      img.onerror = () => showLetterHint(engName);   // fall back if the flag is missing
+      img.src = 'https://flagcdn.com/h80/' + iso + '.png';
+      box.appendChild(tag);
+      box.appendChild(img);
+      box.classList.remove('hidden');
+    }
+    function giveHint() {
+      if (!isGameActive() || turnResolved) return;
+      const taken = new Set([...Object.keys(guessed[0]), ...Object.keys(guessed[1])]);
+      const pool = geoData
+        ? geoData.features.map(f => f.properties.name).filter(n => !taken.has(n))
+        : [];
+      if (!pool.length) {
+        setStatus('כל המדינות כבר זוהו — אין רמזים');
+        return;
+      }
+      hintCount[currentPlayer]++;
+      updateHintCounters();
+      const name = pool[Math.floor(Math.random() * pool.length)];
+      const iso = NAME2ISO[name];
+      if (iso && Math.random() < 0.5) showFlagHint(name, iso);
+      else showLetterHint(name);
+    }
+
     function updateMic() {
       const mic = document.getElementById('mic-btn');
       if (listening) {
@@ -995,6 +1144,7 @@
       awaitingConfirm = false;
       wordInput.value = '';
       setConfirmEnabled(false);   // nothing to confirm yet
+      clearHint();
       clearFeedback();
       setStatus(`${playerNames[currentPlayer]}, תורך! אמור/י שם של מדינה ואשר/י`);
       updateHeader();
@@ -1011,10 +1161,13 @@
       currentPlayer = 0;
       guessed = [{}, {}];
       consecutiveSkips = 0;
+      hintCount = [0, 0];
       turnResolved = false;
       recognitionBlocked = false;
       document.getElementById('hname1').textContent = playerNames[0];
       document.getElementById('hname2').textContent = playerNames[1];
+      updateHintCounters();
+      clearHint();
       showScreen('game-screen');
       updateHeader();
       setupRecognition();
@@ -1048,6 +1201,7 @@
     // Editing the text re-enables confirm (empty text keeps it disabled).
     wordInput.addEventListener('input', () => setConfirmEnabled(!!wordInput.value.trim()));
     document.getElementById('skip-btn').addEventListener('click', skipTurn);
+    document.getElementById('hint-btn').addEventListener('click', giveHint);
 
     // ===== End screen =====
     function showEndScreen() {
@@ -1074,6 +1228,8 @@
       document.getElementById('end-name2').textContent = playerNames[1];
       document.getElementById('end-score1').textContent = s0;
       document.getElementById('end-score2').textContent = s1;
+      document.getElementById('end-hints1').textContent = '💡 ' + hintCount[0] + ' רמזים';
+      document.getElementById('end-hints2').textContent = '💡 ' + hintCount[1] + ' רמזים';
 
       // Country lists (Hebrew display names)
       fillCountryList('list1', 'list-title1', 0, s0);
@@ -1109,11 +1265,14 @@
       currentPlayer = 0;
       guessed = [{}, {}];
       consecutiveSkips = 0;
+      hintCount = [0, 0];
       turnResolved = true;
       recognitionBlocked = false;
       awaitingConfirm = false;
       wordInput.value = '';
       setConfirmEnabled(false);
+      updateHintCounters();
+      clearHint();
       clearFeedback();
       setStatus('לחץ על המיקרופון כדי להתחיל');
       showScreen('setup-screen');
