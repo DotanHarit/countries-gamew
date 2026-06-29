@@ -576,7 +576,84 @@
       return null;
     }
 
-    // Remaining game logic (map, voice, turns) added in later steps.
+    // ===== Map rendering (D3) =====
+    const COLORS = ['#22c55e', '#f97316'];   // player 1 green, player 2 orange
+    const MAP_DEFAULT_FILL = '#1e3a5f';
+    let geoData = null;                        // loaded GeoJSON FeatureCollection
+
+    // Fetch the world GeoJSON once, up front.
+    function loadGeo() {
+      return fetch('https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson')
+        .then(r => {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
+        .then(data => { geoData = data; return data; });
+    }
+
+    // Draw the SVG map into #map-wrap, sized to the container.
+    function drawMap() {
+      const wrap = document.getElementById('map-wrap');
+      if (!geoData) return;
+
+      const w = wrap.clientWidth;
+      const h = wrap.clientHeight;
+      // Container not laid out yet — retry shortly.
+      if (!w || !h) { setTimeout(drawMap, 80); return; }
+
+      // Clear any previous render (e.g. on resize / new game).
+      wrap.innerHTML = '';
+
+      const projection = d3.geoNaturalEarth1()
+        .scale(w / 6.3)
+        .translate([w / 2, h / 2]);
+      const path = d3.geoPath().projection(projection);
+
+      const svg = d3.select(wrap).append('svg')
+        .attr('width', w)
+        .attr('height', h)
+        .attr('viewBox', `0 0 ${w} ${h}`);
+
+      svg.selectAll('path')
+        .data(geoData.features)
+        .enter()
+        .append('path')
+        .attr('d', path)
+        .attr('data-n', d => d.properties.name)
+        .attr('fill', MAP_DEFAULT_FILL)
+        .attr('stroke', '#0a1628')
+        .attr('stroke-width', 0.4);
+
+      // Re-apply colors for countries already named (after resize / redraw).
+      if (typeof guessed !== 'undefined') {
+        for (let p = 0; p < 2; p++) {
+          Object.keys(guessed[p]).forEach(eng => colorCountry(eng, p));
+        }
+      }
+    }
+
+    // Color a country's path(s) for the given player.
+    function colorCountry(engName, playerIndex) {
+      document.querySelectorAll(`[data-n="${engName}"]`)
+        .forEach(el => el.setAttribute('fill', COLORS[playerIndex]));
+    }
+
+    // Schedule a map draw after the game screen is visible & laid out.
+    function scheduleDrawMap() {
+      requestAnimationFrame(() => requestAnimationFrame(() => drawMap()));
+    }
+
+    // Redraw the map on resize when the game screen is active.
+    window.addEventListener('resize', () => {
+      if (document.getElementById('game-screen').classList.contains('active')) {
+        drawMap();
+      }
+    });
+
+    // Kick off the GeoJSON fetch immediately so it's ready by game start.
+    loadGeo().catch(err => console.error('Failed to load map data:', err));
+
+    // Remaining game logic (voice, turns) added in later steps.
   </script>
 </body>
 </html>
