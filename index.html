@@ -148,6 +148,34 @@
     #remaining #remaining-num { font-size: 18px; font-weight: 800; color: #e2e8f0; }
     #remaining .rem-label { font-size: 10px; color: #94a3b8; }
 
+    #area-meter {
+      flex: 0 0 auto;
+      position: relative;
+      height: 22px;
+      background: var(--country);
+      overflow: hidden;
+      border-bottom: 1px solid var(--border);
+    }
+    .area-fill {
+      position: absolute;
+      top: 0; bottom: 0;
+      width: 0;
+      transition: width .4s ease;
+    }
+    #area-fill1 { right: 0; background: var(--p1); }   /* player 1 grows from the right */
+    #area-fill2 { left: 0;  background: var(--p2); }   /* player 2 grows from the left */
+    .area-label {
+      position: absolute; top: 0;
+      line-height: 22px;
+      font-size: 11px; font-weight: 800;
+      padding: 0 8px;
+      color: #fff;
+      text-shadow: 0 1px 2px rgba(0,0,0,.7);
+      pointer-events: none;
+    }
+    #area-label1 { right: 0; }
+    #area-label2 { left: 0; }
+
     #map-wrap {
       flex: 1 1 auto;
       position: relative;
@@ -345,6 +373,13 @@
           <span class="name" id="hname2">שחקן 2</span>
           <span class="score" id="score2">0</span>
         </div>
+      </div>
+
+      <div id="area-meter" title="אחוז שטח היבשה שנצבר לכל שחקן">
+        <div id="area-fill1" class="area-fill"></div>
+        <div id="area-fill2" class="area-fill"></div>
+        <span id="area-label1" class="area-label">0%</span>
+        <span id="area-label2" class="area-label">0%</span>
       </div>
 
       <div id="map-wrap"></div>
@@ -636,6 +671,20 @@
     const COLORS = ['#22c55e', '#f97316'];   // player 1 green, player 2 orange
     const MAP_DEFAULT_FILL = '#1e3a5f';
     let geoData = null;                        // loaded GeoJSON FeatureCollection
+    let areaByName = {};                       // English name -> spherical area (steradians)
+    let totalArea = 0;                         // sum of all countries' areas
+
+    // Precompute each country's land area (d3.geoArea) and the total.
+    function computeAreas() {
+      areaByName = {};
+      totalArea = 0;
+      if (!geoData) return;
+      for (const f of geoData.features) {
+        const a = d3.geoArea(f);
+        areaByName[f.properties.name] = a;
+        totalArea += a;
+      }
+    }
 
     // Fetch the world GeoJSON once, up front.
     function loadGeo() {
@@ -644,7 +693,12 @@
           if (!r.ok) throw new Error('HTTP ' + r.status);
           return r.json();
         })
-        .then(data => { geoData = data; return data; });
+        .then(data => {
+          geoData = data;
+          computeAreas();
+          if (isGameActive()) updateHeader();   // refresh meter if geo arrived after game start
+          return data;
+        });
     }
 
     // Draw the SVG map into #map-wrap, sized to the container.
@@ -746,6 +800,22 @@
       document.getElementById('remaining-num').textContent = Math.max(0, total - named);
       document.getElementById('tag1').classList.toggle('active', currentPlayer === 0);
       document.getElementById('tag2').classList.toggle('active', currentPlayer === 1);
+      updateAreaMeter();
+    }
+
+    // Percentage of total land area held by player p (by claimed countries).
+    function playerAreaPct(p) {
+      if (!totalArea) return 0;
+      let s = 0;
+      for (const eng of Object.keys(guessed[p])) s += (areaByName[eng] || 0);
+      return s / totalArea * 100;
+    }
+    function updateAreaMeter() {
+      const p1 = playerAreaPct(0), p2 = playerAreaPct(1);
+      document.getElementById('area-fill1').style.width = p1 + '%';
+      document.getElementById('area-fill2').style.width = p2 + '%';
+      document.getElementById('area-label1').textContent = (p1 < 10 ? p1.toFixed(1) : Math.round(p1)) + '%';
+      document.getElementById('area-label2').textContent = (p2 < 10 ? p2.toFixed(1) : Math.round(p2)) + '%';
     }
     function updateMic() {
       const mic = document.getElementById('mic-btn');
