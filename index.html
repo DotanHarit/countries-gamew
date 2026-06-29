@@ -134,6 +134,20 @@
     .player-tag.p1.active { box-shadow: inset 0 -3px 0 var(--p1); }
     .player-tag.p2.active { box-shadow: inset 0 -3px 0 var(--p2); }
 
+    #remaining {
+      flex: 0 0 auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 0 12px;
+      line-height: 1.1;
+      border-left: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+    }
+    #remaining #remaining-num { font-size: 18px; font-weight: 800; color: #e2e8f0; }
+    #remaining .rem-label { font-size: 10px; color: #94a3b8; }
+
     #map-wrap {
       flex: 1 1 auto;
       position: relative;
@@ -145,14 +159,45 @@
 
     #panel {
       flex: 0 0 auto;
-      min-height: 72px;
       display: flex;
-      align-items: center;
-      gap: 14px;
-      padding: 10px 16px;
+      flex-direction: column;
+      gap: 8px;
+      padding: 8px 12px;
       background: var(--panel);
       border-top: 1px solid var(--border);
     }
+    #input-row, #bottom-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+    }
+    #word-input {
+      flex: 1 1 auto;
+      min-width: 0;
+      padding: 10px 12px;
+      font-size: 16px;
+      border-radius: 10px;
+      border: 2px solid var(--border);
+      background: #0d1b2e;
+      color: #e2e8f0;
+      text-align: center;
+      outline: none;
+    }
+    #word-input:focus { border-color: var(--p1); }
+    #confirm-btn {
+      flex: 0 0 auto;
+      padding: 11px 16px;
+      font-size: 15px;
+      font-weight: 700;
+      border: none;
+      border-radius: 10px;
+      background: var(--p1);
+      color: #052e16;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    #confirm-btn:active { transform: scale(0.97); }
 
     #skip-btn {
       flex: 0 0 auto;
@@ -291,6 +336,10 @@
           <span class="name" id="hname1">שחקן 1</span>
           <span class="score" id="score1">0</span>
         </div>
+        <div id="remaining" title="מדינות שעוד לא זוהו">
+          <span id="remaining-num">177</span>
+          <span class="rem-label">נותרו</span>
+        </div>
         <div class="player-tag p2" id="tag2">
           <span class="dot"></span>
           <span class="name" id="hname2">שחקן 2</span>
@@ -301,12 +350,18 @@
       <div id="map-wrap"></div>
 
       <div id="panel">
-        <button id="mic-btn" aria-label="מיקרופון">🎤</button>
-        <div id="status-area">
-          <div id="feedback"></div>
-          <div id="status-text">לחץ על המיקרופון כדי להתחיל</div>
+        <div id="input-row">
+          <button id="mic-btn" aria-label="מיקרופון">🎤</button>
+          <input id="word-input" type="text" autocomplete="off" placeholder="אמור/י או הקלד/י שם של מדינה">
+          <button id="confirm-btn">אשר ✓</button>
         </div>
-        <button id="skip-btn" aria-label="דלג תור">דלג ⏭</button>
+        <div id="bottom-row">
+          <div id="status-area">
+            <div id="feedback"></div>
+            <div id="status-text">לחץ על המיקרופון כדי להתחיל</div>
+          </div>
+          <button id="skip-btn" aria-label="דלג תור">דלג ⏭</button>
+        </div>
       </div>
     </section>
 
@@ -657,12 +712,16 @@
     // ===== Game state =====
     let playerNames = ['', ''];      // [player1Name, player2Name]
     let currentPlayer = 0;           // 0 or 1
-    let guessed = [{}, {}];          // guessed[p][engName] = true
+    let guessed = [{}, {}];          // guessed[p][engName] = true (a country can be taken once, by either player)
     let consecutiveSkips = 0;        // skips in a row (2 in a row ends the game)
     let recognition = null;          // SpeechRecognition instance
     let listening = false;
     let turnResolved = false;        // true once the current turn ends (success / skip)
     let recognitionBlocked = false;  // true after a not-allowed mic error
+    let awaitingConfirm = false;     // a spoken word is waiting in the box for confirm/edit
+
+    const wordInput = document.getElementById('word-input');
+    const confirmBtn = document.getElementById('confirm-btn');
 
     // ===== Small UI helpers =====
     function setStatus(msg) {
@@ -680,8 +739,11 @@
       fb.textContent = '';
     }
     function updateHeader() {
+      const named = Object.keys(guessed[0]).length + Object.keys(guessed[1]).length;
+      const total = geoData ? geoData.features.length : 177;
       document.getElementById('score1').textContent = Object.keys(guessed[0]).length;
       document.getElementById('score2').textContent = Object.keys(guessed[1]).length;
+      document.getElementById('remaining-num').textContent = Math.max(0, total - named);
       document.getElementById('tag1').classList.toggle('active', currentPlayer === 0);
       document.getElementById('tag2').classList.toggle('active', currentPlayer === 1);
     }
@@ -711,16 +773,19 @@
         for (let i = e.resultIndex; i < e.results.length; i++) {
           const res = e.results[i];
           if (res.isFinal) {
-            const firstSpoken = res[0].transcript;
-            let found = null;
-            for (let a = 0; a < res.length && a < 5; a++) {
-              const f = findCountry(res[a].transcript);
-              if (f) { found = f; break; }
+            // Put the recognized word in the box for review/edit — do NOT auto-submit.
+            const text = (res[0].transcript || '').trim();
+            if (text) {
+              wordInput.value = text;
+              awaitingConfirm = true;
+              setStatus('בדוק/י את המילה, ערוך/י אם צריך, ולחץ/י אשר ✓');
+              stopListening();   // pause mic so the text isn't overwritten while editing
             }
-            handleSpoken(firstSpoken, found);
-            if (turnResolved) return;   // a success ended this turn
+            return;
           } else {
-            setStatus('🎤 ' + res[0].transcript);
+            // Live transcript preview straight into the box.
+            wordInput.value = (res[0].transcript || '').trim();
+            setStatus('🎤 מקשיב...');
           }
         }
       };
@@ -740,8 +805,9 @@
       recognition.onend = () => {
         listening = false;
         updateMic();
-        // Recognition stopped (silence/network). If the turn isn't over, listen again.
-        if (!turnResolved && !recognitionBlocked && isGameActive()) {
+        // Recognition stopped (silence/network). Relisten only if we're not
+        // waiting on a confirm and the turn isn't over.
+        if (!turnResolved && !recognitionBlocked && !awaitingConfirm && isGameActive()) {
           setTimeout(safeStartListen, 150);
         }
       };
@@ -751,9 +817,15 @@
       return document.getElementById('game-screen').classList.contains('active');
     }
     function safeStartListen() {
-      if (!recognition || turnResolved || recognitionBlocked || !isGameActive()) return;
+      if (!recognition || turnResolved || recognitionBlocked || awaitingConfirm || !isGameActive()) return;
       try { recognition.start(); listening = true; updateMic(); }
       catch (e) { /* already started */ }
+    }
+    // Gracefully pause the mic without ending the turn (used while awaiting confirm).
+    function stopListening() {
+      if (recognition) { try { recognition.stop(); } catch (e) {} }
+      listening = false;
+      updateMic();
     }
     function stopRecognition() {
       if (recognition) { try { recognition.abort(); } catch (e) {} }
@@ -762,34 +834,39 @@
     }
 
     // ===== Turn flow =====
-    function handleSpoken(spokenText, foundEnglishName) {
+    // Process the confirmed/edited word from the input box.
+    function processWord(rawText) {
       if (turnResolved) return;
-
-      if (!foundEnglishName) {
-        // Not a country. No red alarm — if we actually understood a word,
-        // show it neutrally and ask to try again; otherwise just keep listening.
-        const heard = (spokenText || '').trim();
-        if (heard) {
-          showFeedback('hint', `הבנתי "${heard}" — זו לא מדינה שאני מזהה, נסה/י שוב`);
-        } else {
-          clearFeedback();
-        }
-        return; // same player, keep listening
+      const text = (rawText || '').trim();
+      if (!text) {
+        setStatus('אמור/י או הקלד/י שם של מדינה, ואז אשר/י');
+        return;
       }
 
-      if (guessed[0][foundEnglishName] || guessed[1][foundEnglishName]) {
-        // Already named — stay on the same player, keep listening.
-        showFeedback('duplicate', `${E2H[foundEnglishName]} כבר נאמרה! נסה/י ארץ אחרת`);
+      const found = findCountry(text);
+
+      if (!found) {
+        // Understood a word but it isn't a country — keep it for editing.
+        showFeedback('hint', `הבנתי "${text}" — זו לא מדינה שאני מזהה, ערוך/י ונסה/י שוב`);
+        return;
+      }
+
+      if (guessed[0][found] || guessed[1][found]) {
+        // A country can be marked only once (by either player).
+        showFeedback('duplicate', `${E2H[found]} כבר סומנה! בחר/י מדינה אחרת`);
+        wordInput.value = '';
         return;
       }
 
       // Success — only now does the turn pass to the other player.
       turnResolved = true;
+      awaitingConfirm = false;
       consecutiveSkips = 0;
-      guessed[currentPlayer][foundEnglishName] = true;
-      colorCountry(foundEnglishName, currentPlayer);
+      guessed[currentPlayer][found] = true;
+      colorCountry(found, currentPlayer);
       updateHeader();
-      showFeedback('success', `✅ ${E2H[foundEnglishName]}`);
+      showFeedback('success', `✅ ${E2H[found]}`);
+      wordInput.value = '';
       stopRecognition();
       setTimeout(() => { clearFeedback(); nextTurn(); }, 1100);
     }
@@ -813,8 +890,10 @@
     function startTurn() {
       turnResolved = false;
       recognitionBlocked = false;
+      awaitingConfirm = false;
+      wordInput.value = '';
       clearFeedback();
-      setStatus(`${playerNames[currentPlayer]}, תורך! אמור/י שם של מדינה`);
+      setStatus(`${playerNames[currentPlayer]}, תורך! אמור/י שם של מדינה ואשר/י`);
       updateHeader();
       safeStartListen();
     }
@@ -843,9 +922,18 @@
     // Wire up buttons
     startBtn.addEventListener('click', startGame);
     document.getElementById('mic-btn').addEventListener('click', () => {
-      if (!isGameActive()) return;
-      recognitionBlocked = false;   // user retrying after a mic error
-      if (!listening) safeStartListen();
+      if (!isGameActive() || turnResolved) return;
+      // (Re-)record: clear the box and listen again.
+      recognitionBlocked = false;
+      awaitingConfirm = false;
+      wordInput.value = '';
+      clearFeedback();
+      setStatus('🎤 מקשיב...');
+      safeStartListen();
+    });
+    confirmBtn.addEventListener('click', () => processWord(wordInput.value));
+    wordInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); processWord(wordInput.value); }
     });
     document.getElementById('skip-btn').addEventListener('click', skipTurn);
 
@@ -911,6 +999,8 @@
       consecutiveSkips = 0;
       turnResolved = true;
       recognitionBlocked = false;
+      awaitingConfirm = false;
+      wordInput.value = '';
       clearFeedback();
       setStatus('לחץ על המיקרופון כדי להתחיל');
       showScreen('setup-screen');
