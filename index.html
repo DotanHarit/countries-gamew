@@ -861,12 +861,75 @@
       if (isGameActive() && !listening) safeStartListen();
     });
 
-    // showEndScreen is fully implemented in Step 5; minimal version for now.
+    // ===== End screen =====
     function showEndScreen() {
       clearInterval(countdownTimer);
       stopRecognition();
+
+      const s0 = Object.keys(guessed[0]).length;
+      const s1 = Object.keys(guessed[1]).length;
+
+      // Winner banner
+      const banner = document.getElementById('winner-banner');
+      if (s0 > s1) {
+        banner.textContent = `🏆 ${playerNames[0]} ניצח/ה!`;
+        banner.style.color = COLORS[0];
+      } else if (s1 > s0) {
+        banner.textContent = `🏆 ${playerNames[1]} ניצח/ה!`;
+        banner.style.color = COLORS[1];
+      } else {
+        banner.textContent = '🤝 תיקו!';
+        banner.style.color = '#e2e8f0';
+      }
+
+      // Score cards
+      document.getElementById('end-name1').textContent = playerNames[0];
+      document.getElementById('end-name2').textContent = playerNames[1];
+      document.getElementById('end-score1').textContent = s0;
+      document.getElementById('end-score2').textContent = s1;
+
+      // Country lists (Hebrew display names)
+      fillCountryList('list1', 'list-title1', 0, s0);
+      fillCountryList('list2', 'list-title2', 1, s1);
+
       showScreen('end-screen');
     }
+
+    function fillCountryList(listId, titleId, playerIndex, count) {
+      document.getElementById(titleId).textContent = `${playerNames[playerIndex]} (${count})`;
+      const ul = document.getElementById(listId);
+      ul.innerHTML = '';
+      const names = Object.keys(guessed[playerIndex])
+        .map(eng => E2H[eng] || eng)
+        .sort((a, b) => a.localeCompare(b, 'he'));
+      if (names.length === 0) {
+        const li = document.createElement('li');
+        li.className = 'empty';
+        li.textContent = '— אין —';
+        ul.appendChild(li);
+        return;
+      }
+      names.forEach(h => {
+        const li = document.createElement('li');
+        li.textContent = h;
+        ul.appendChild(li);
+      });
+    }
+
+    // ===== New game =====
+    function newGame() {
+      clearInterval(countdownTimer);
+      stopRecognition();
+      currentPlayer = 0;
+      guessed = [{}, {}];
+      passCount = [0, 0];
+      turnResolved = false;
+      clearFeedback();
+      setStatus('לחץ על המיקרופון כדי להתחיל');
+      showScreen('setup-screen');
+      refreshStartBtn();
+    }
+    document.getElementById('newgame-btn').addEventListener('click', newGame);
   </script>
 </body>
 </html>
