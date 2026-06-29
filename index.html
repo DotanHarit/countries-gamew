@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>🌍 משחק מדינות העולם</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+    :root {
+      --bg: #0d1b2e;
+      --ocean: #0a1628;
+      --country: #1e3a5f;
+      --p1: #22c55e;
+      --p2: #f97316;
+      --panel: #1a2744;
+      --border: #1e3a5f;
+      --inactive: #334155;
+    }
+
+    html, body {
+      background: var(--bg);
+      color: #e2e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      overflow: hidden;
+    }
+
+    #app {
+      width: 100%;
+      /* height is set in JS via window.innerHeight — do NOT use 100vh/100dvh */
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .screen { display: none; width: 100%; height: 100%; }
+    .screen.active { display: flex; flex-direction: column; }
+
+    /* ---------- Screen 1: Setup ---------- */
+    #setup-screen {
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      text-align: center;
+      overflow-y: auto;
+    }
+    #setup-screen .setup-inner {
+      width: 100%;
+      max-width: 380px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    #setup-screen h1 { font-size: 28px; line-height: 1.3; }
+    #setup-screen .subtitle { font-size: 15px; color: #94a3b8; }
+    .name-input {
+      width: 100%;
+      padding: 14px 16px;
+      font-size: 18px;
+      border-radius: 12px;
+      border: 2px solid var(--border);
+      background: var(--panel);
+      color: #e2e8f0;
+      text-align: center;
+      outline: none;
+    }
+    .name-input:focus { border-color: var(--p1); }
+    .name-input:nth-of-type(2):focus { border-color: var(--p2); }
+
+    .btn {
+      width: 100%;
+      padding: 16px;
+      font-size: 18px;
+      font-weight: 700;
+      border: none;
+      border-radius: 12px;
+      background: var(--p1);
+      color: #052e16;
+      cursor: pointer;
+      transition: opacity .2s, transform .1s;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn:disabled { background: var(--inactive); color: #64748b; cursor: not-allowed; }
+
+    .mic-note {
+      font-size: 13px;
+      color: #f59e0b;
+      background: rgba(245, 158, 11, 0.1);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      border-radius: 10px;
+      padding: 10px 12px;
+      line-height: 1.5;
+    }
+
+    /* ---------- Screen 2: Game ---------- */
+    #game-screen { height: 100%; }
+
+    #header {
+      flex: 0 0 auto;
+      height: 52px;
+      display: flex;
+      align-items: stretch;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+    }
+    .player-tag {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 14px;
+      font-size: 15px;
+      font-weight: 600;
+      overflow: hidden;
+    }
+    .player-tag.p2 { flex-direction: row-reverse; }
+    .player-tag .dot {
+      width: 12px; height: 12px; border-radius: 50%;
+      flex: 0 0 auto;
+    }
+    .player-tag.p1 .dot { background: var(--p1); }
+    .player-tag.p2 .dot { background: var(--p2); }
+    .player-tag .name {
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .player-tag .score {
+      font-size: 20px; font-weight: 800; min-width: 24px; text-align: center;
+    }
+    .player-tag.p1 .score { color: var(--p1); }
+    .player-tag.p2 .score { color: var(--p2); }
+    .player-tag.active {
+      background: rgba(255,255,255,0.06);
+    }
+    .player-tag.p1.active { box-shadow: inset 0 -3px 0 var(--p1); }
+    .player-tag.p2.active { box-shadow: inset 0 -3px 0 var(--p2); }
+
+    #map-wrap {
+      flex: 1 1 auto;
+      position: relative;
+      background: var(--ocean);
+      overflow: hidden;
+      min-height: 0;
+    }
+    #map-wrap svg { display: block; width: 100%; height: 100%; }
+
+    #panel {
+      flex: 0 0 auto;
+      min-height: 72px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 10px 16px;
+      background: var(--panel);
+      border-top: 1px solid var(--border);
+    }
+
+    #countdown { flex: 0 0 auto; }
+
+    #mic-btn {
+      flex: 0 0 auto;
+      width: 52px; height: 52px;
+      border-radius: 50%;
+      border: none;
+      background: var(--country);
+      color: #fff;
+      font-size: 24px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .2s;
+    }
+    #mic-btn.on { animation: pulse 1.3s infinite; }
+    @keyframes pulse {
+      0%,100% { box-shadow: 0 0 0 0 rgba(34,197,94,.5); }
+      50%     { box-shadow: 0 0 0 10px rgba(34,197,94,0); }
+    }
+
+    #status-area {
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      overflow: hidden;
+    }
+    #feedback {
+      display: none;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 6px 10px;
+      border-radius: 8px;
+      border-right: 4px solid transparent;
+    }
+    #feedback.show { display: block; }
+    #feedback.success { background: #14532d; border-color: var(--p1); color: #bbf7d0; }
+    #feedback.duplicate { background: #1e3a5f; border-color: #3b82f6; color: #bfdbfe; }
+    #feedback.error { background: #450a0a; border-color: #ef4444; color: #fecaca; }
+    #status-text {
+      font-size: 14px; color: #94a3b8;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* ---------- Screen 3: End ---------- */
+    #end-screen {
+      align-items: center;
+      justify-content: flex-start;
+      padding: 24px 16px;
+      overflow-y: auto;
+    }
+    #end-screen .end-inner {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      align-items: center;
+    }
+    #winner-banner {
+      font-size: 26px; font-weight: 800; text-align: center; line-height: 1.4;
+    }
+    .score-compare {
+      display: flex; width: 100%; gap: 12px;
+    }
+    .score-card {
+      flex: 1;
+      background: var(--panel);
+      border: 2px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+      text-align: center;
+    }
+    .score-card.p1 { border-color: var(--p1); }
+    .score-card.p2 { border-color: var(--p2); }
+    .score-card .card-name { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+    .score-card .card-score { font-size: 40px; font-weight: 900; }
+    .score-card.p1 .card-score { color: var(--p1); }
+    .score-card.p2 .card-score { color: var(--p2); }
+
+    .country-lists { display: flex; width: 100%; gap: 12px; }
+    .country-col {
+      flex: 1;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+    }
+    .country-col h3 { font-size: 14px; margin-bottom: 8px; text-align: center; }
+    .country-col.p1 h3 { color: var(--p1); }
+    .country-col.p2 h3 { color: var(--p2); }
+    .country-col ul { list-style: none; font-size: 14px; line-height: 1.8; }
+    .country-col li {
+      padding: 2px 6px; border-radius: 6px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .country-col.p1 li { background: rgba(34,197,94,0.1); margin-bottom: 3px; }
+    .country-col.p2 li { background: rgba(249,115,22,0.1); margin-bottom: 3px; }
+    .country-col .empty { color: #64748b; font-size: 13px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div id="app">
+
+    <!-- ===== Screen 1: Setup ===== -->
+    <section id="setup-screen" class="screen active">
+      <div class="setup-inner">
+        <h1>🌍 משחק מדינות העולם</h1>
+        <p class="subtitle">שני שחקנים, בתורות, אומרים שמות של מדינות בקול. מי שיודע יותר — מנצח!</p>
+        <input class="name-input" id="name1" type="text" placeholder="שם שחקן 1" autocomplete="off" maxlength="20">
+        <input class="name-input" id="name2" type="text" placeholder="שם שחקן 2" autocomplete="off" maxlength="20">
+        <button class="btn" id="start-btn" disabled>התחל משחק</button>
+        <p class="mic-note">🎤 המשחק דורש גישה למיקרופון ועובד רק ב‑Chrome כשהוא מוגש דרך HTTP/HTTPS (לא מקובץ מקומי).</p>
+      </div>
+    </section>
+
+    <!-- ===== Screen 2: Game ===== -->
+    <section id="game-screen" class="screen">
+      <div id="header">
+        <div class="player-tag p1" id="tag1">
+          <span class="dot"></span>
+          <span class="name" id="hname1">שחקן 1</span>
+          <span class="score" id="score1">0</span>
+        </div>
+        <div class="player-tag p2" id="tag2">
+          <span class="dot"></span>
+          <span class="name" id="hname2">שחקן 2</span>
+          <span class="score" id="score2">0</span>
+        </div>
+      </div>
+
+      <div id="map-wrap"></div>
+
+      <div id="panel">
+        <div id="countdown">
+          <svg width="52" height="52">
+            <circle cx="26" cy="26" r="20" fill="none" stroke="#1e293b" stroke-width="4"/>
+            <circle id="cdarc" cx="26" cy="26" r="20" fill="none"
+              stroke="#22c55e" stroke-width="4"
+              stroke-dasharray="125.7"
+              stroke-dashoffset="0"
+              stroke-linecap="round"
+              transform="rotate(-90 26 26)"/>
+            <text id="cdtxt" x="26" y="31" text-anchor="middle"
+              fill="white" font-size="14" font-weight="bold">5</text>
+          </svg>
+        </div>
+        <button id="mic-btn" aria-label="מיקרופון">🎤</button>
+        <div id="status-area">
+          <div id="feedback"></div>
+          <div id="status-text">לחץ על המיקרופון כדי להתחיל</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Screen 3: End ===== -->
+    <section id="end-screen" class="screen">
+      <div class="end-inner">
+        <div id="winner-banner"></div>
+        <div class="score-compare">
+          <div class="score-card p1">
+            <div class="card-name" id="end-name1">שחקן 1</div>
+            <div class="card-score" id="end-score1">0</div>
+          </div>
+          <div class="score-card p2">
+            <div class="card-name" id="end-name2">שחקן 2</div>
+            <div class="card-score" id="end-score2">0</div>
+          </div>
+        </div>
+        <div class="country-lists">
+          <div class="country-col p1">
+            <h3 id="list-title1">שחקן 1</h3>
+            <ul id="list1"></ul>
+          </div>
+          <div class="country-col p2">
+            <h3 id="list-title2">שחקן 2</h3>
+            <ul id="list2"></ul>
+          </div>
+        </div>
+        <button class="btn" id="newgame-btn">משחק חדש</button>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- D3.js v7 from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  <script>
+    // ===== App height fix (mobile) — set in JS, not CSS vh =====
+    function setVH() {
+      document.getElementById('app').style.height = window.innerHeight + 'px';
+    }
+    setVH();
+    window.addEventListener('resize', setVH);
+
+    // Screen navigation helper
+    function showScreen(id) {
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      document.getElementById(id).classList.add('active');
+    }
+
+    // ---- Setup screen wiring (start button enable/disable) ----
+    const name1El = document.getElementById('name1');
+    const name2El = document.getElementById('name2');
+    const startBtn = document.getElementById('start-btn');
+    function refreshStartBtn() {
+      startBtn.disabled = !(name1El.value.trim() && name2El.value.trim());
+    }
+    name1El.addEventListener('input', refreshStartBtn);
+    name2El.addEventListener('input', refreshStartBtn);
+
+    // ===== Hebrew → English country dictionary =====
+    // English values must exactly match the GeoJSON `name` property (data-n).
+    // Multiple Hebrew keys may map to the same English country (aliases / spellings).
+    const H2E = {
+      "אפגניסטן": "Afghanistan",
+      "אלבניה": "Albania",
+      "אלג'יריה": "Algeria", "אלג'ריה": "Algeria",
+      "אנגולה": "Angola",
+      "אנטארקטיקה": "Antarctica", "אנטארקטיקה": "Antarctica",
+      "ארגנטינה": "Argentina",
+      "ארמניה": "Armenia",
+      "אוסטרליה": "Australia",
+      "אוסטריה": "Austria",
+      "אזרבייג'ן": "Azerbaijan", "אזרביג'ן": "Azerbaijan",
+      "בנגלדש": "Bangladesh",
+      "בלארוס": "Belarus", "רוסיה הלבנה": "Belarus",
+      "בלגיה": "Belgium",
+      "בליז": "Belize",
+      "בנין": "Benin",
+      "בהוטן": "Bhutan", "בוטאן": "Bhutan",
+      "בוליביה": "Bolivia",
+      "בוסניה": "Bosnia and Herzegovina", "בוסניה והרצגובינה": "Bosnia and Herzegovina",
+      "בוטסואנה": "Botswana",
+      "ברזיל": "Brazil",
+      "ברוניי": "Brunei",
+      "בולגריה": "Bulgaria",
+      "בורקינה פאסו": "Burkina Faso",
+      "בורונדי": "Burundi", "בורנדי": "Burundi",
+      "קמבודיה": "Cambodia",
+      "קמרון": "Cameroon",
+      "קנדה": "Canada",
+      "הרפובליקה המרכז אפריקאית": "Central African Republic", "מרכז אפריקה": "Central African Republic",
+      "צ'אד": "Chad", "צאד": "Chad",
+      "צ'ילה": "Chile", "צ'ילי": "Chile",
+      "סין": "China",
+      "קולומביה": "Colombia",
+      "קוסטה ריקה": "Costa Rica",
+      "קרואטיה": "Croatia",
+      "קובה": "Cuba",
+      "קפריסין": "Cyprus",
+      "צ'כיה": "Czech Republic", "הרפובליקה הצ'כית": "Czech Republic", "צ'כוסלובקיה": "Czech Republic",
+      "קונגו הדמוקרטית": "Democratic Republic of the Congo", "הרפובליקה הדמוקרטית של קונגו": "Democratic Republic of the Congo", "קינשסה": "Democratic Republic of the Congo", "זאיר": "Democratic Republic of the Congo",
+      "דנמרק": "Denmark",
+      "ג'יבוטי": "Djibouti",
+      "הרפובליקה הדומיניקנית": "Dominican Republic", "רפובליקה דומיניקנית": "Dominican Republic",
+      "מזרח טימור": "East Timor", "טימור": "East Timor", "טימור המזרחית": "East Timor",
+      "אקוודור": "Ecuador",
+      "מצרים": "Egypt",
+      "אל סלבדור": "El Salvador", "סלבדור": "El Salvador",
+      "אנגליה": "England", "בריטניה": "England", "אנגליה הגדולה": "England", "הממלכה המאוחדת": "England", "ממלכה מאוחדת": "England",
+      "גינאה המשוונית": "Equatorial Guinea", "גיניאה המשוונית": "Equatorial Guinea",
+      "אריתריאה": "Eritrea",
+      "אסטוניה": "Estonia",
+      "אתיופיה": "Ethiopia",
+      "איי פוקלנד": "Falkland Islands", "פוקלנד": "Falkland Islands",
+      "פיג'י": "Fiji",
+      "פינלנד": "Finland",
+      "צרפת": "France",
+      "אדמות הדרום הצרפתיות": "French Southern and Antarctic Lands",
+      "גבון": "Gabon",
+      "גמביה": "Gambia",
+      "גאורגיה": "Georgia", "גרוזיה": "Georgia",
+      "גרמניה": "Germany",
+      "גאנה": "Ghana",
+      "יוון": "Greece",
+      "גרינלנד": "Greenland",
+      "גואטמלה": "Guatemala",
+      "גינאה": "Guinea", "גיניאה": "Guinea",
+      "גינאה ביסאו": "Guinea Bissau", "גיניאה ביסאו": "Guinea Bissau",
+      "גיאנה": "Guyana", "גויאנה": "Guyana",
+      "האיטי": "Haiti",
+      "הונדורס": "Honduras",
+      "הונגריה": "Hungary",
+      "איסלנד": "Iceland",
+      "הודו": "India",
+      "אינדונזיה": "Indonesia",
+      "איראן": "Iran", "אירן": "Iran",
+      "עיראק": "Iraq", "עירק": "Iraq",
+      "אירלנד": "Ireland",
+      "ישראל": "Israel",
+      "איטליה": "Italy",
+      "חוף השנהב": "Ivory Coast",
+      "ג'מייקה": "Jamaica",
+      "יפן": "Japan",
+      "ירדן": "Jordan",
+      "קזחסטן": "Kazakhstan",
+      "קניה": "Kenya",
+      "קוסובו": "Kosovo",
+      "כווית": "Kuwait", "כוויית": "Kuwait",
+      "קירגיזסטן": "Kyrgyzstan", "קירגיסטן": "Kyrgyzstan",
+      "לאוס": "Laos",
+      "לטביה": "Latvia",
+      "לבנון": "Lebanon",
+      "לסוטו": "Lesotho",
+      "ליבריה": "Liberia",
+      "לוב": "Libya", "לוביה": "Libya",
+      "ליטא": "Lithuania", "ליטה": "Lithuania",
+      "לוקסמבורג": "Luxembourg",
+      "מקדוניה": "Macedonia", "מקדוניה הצפונית": "Macedonia",
+      "מדגסקר": "Madagascar",
+      "מלאווי": "Malawi", "מלווי": "Malawi",
+      "מלזיה": "Malaysia",
+      "מאלי": "Mali", "מלי": "Mali",
+      "מאוריטניה": "Mauritania", "מוריטניה": "Mauritania",
+      "מקסיקו": "Mexico",
+      "מולדובה": "Moldova",
+      "מונגוליה": "Mongolia",
+      "מונטנגרו": "Montenegro",
+      "מרוקו": "Morocco",
+      "מוזמביק": "Mozambique",
+      "מיאנמר": "Myanmar", "בורמה": "Myanmar",
+      "נמיביה": "Namibia",
+      "נפאל": "Nepal",
+      "הולנד": "Netherlands", "נדרלנד": "Netherlands",
+      "קלדוניה החדשה": "New Caledonia",
+      "ניו זילנד": "New Zealand", "ניו זילאנד": "New Zealand", "זילנד החדשה": "New Zealand",
+      "ניקרגואה": "Nicaragua",
+      "ניז'ר": "Niger",
+      "ניגריה": "Nigeria",
+      "צפון קוריאה": "North Korea", "קוריאה הצפונית": "North Korea",
+      "קפריסין הצפונית": "Northern Cyprus",
+      "נורווגיה": "Norway", "נורבגיה": "Norway",
+      "עומאן": "Oman", "עומן": "Oman",
+      "פקיסטן": "Pakistan",
+      "פנמה": "Panama",
+      "פפואה גינאה החדשה": "Papua New Guinea", "פפואה ניו גיני": "Papua New Guinea",
+      "פרגוואי": "Paraguay", "פרגוויי": "Paraguay",
+      "פרו": "Peru",
+      "הפיליפינים": "Philippines", "פיליפינים": "Philippines",
+      "פולין": "Poland",
+      "פורטוגל": "Portugal",
+      "פוארטו ריקו": "Puerto Rico", "פורטו ריקו": "Puerto Rico",
+      "קטאר": "Qatar", "קטר": "Qatar",
+      "סרביה": "Republic of Serbia",
+      "קונגו": "Republic of the Congo", "הרפובליקה של קונגו": "Republic of the Congo",
+      "רומניה": "Romania",
+      "רוסיה": "Russia",
+      "רואנדה": "Rwanda",
+      "ערב הסעודית": "Saudi Arabia", "סעודיה": "Saudi Arabia", "הסעודית": "Saudi Arabia",
+      "סנגל": "Senegal",
+      "סיירה לאון": "Sierra Leone", "סיירה ליאונה": "Sierra Leone",
+      "סלובקיה": "Slovakia",
+      "סלובניה": "Slovenia",
+      "איי שלמה": "Solomon Islands", "איי שלומה": "Solomon Islands",
+      "סומליה": "Somalia",
+      "סומלילנד": "Somaliland",
+      "דרום אפריקה": "South Africa",
+      "דרום קוריאה": "South Korea", "קוריאה הדרומית": "South Korea", "קוריאה": "South Korea",
+      "דרום סודאן": "South Sudan",
+      "ספרד": "Spain",
+      "סרי לנקה": "Sri Lanka",
+      "סודאן": "Sudan", "סודן": "Sudan",
+      "סורינאם": "Suriname", "סורינם": "Suriname",
+      "סווזילנד": "Swaziland", "אסוואטיני": "Swaziland",
+      "שבדיה": "Sweden", "שוודיה": "Sweden",
+      "שווייץ": "Switzerland", "שוויץ": "Switzerland",
+      "סוריה": "Syria",
+      "טייוואן": "Taiwan", "טייואן": "Taiwan",
+      "טג'יקיסטן": "Tajikistan",
+      "תאילנד": "Thailand", "תאילנד": "Thailand",
+      "איי בהאמה": "The Bahamas", "בהאמה": "The Bahamas", "בהאמס": "The Bahamas",
+      "טוגו": "Togo",
+      "טרינידד וטובגו": "Trinidad and Tobago", "טרינידד": "Trinidad and Tobago",
+      "תוניסיה": "Tunisia", "טוניסיה": "Tunisia",
+      "טורקיה": "Turkey", "תורכיה": "Turkey",
+      "טורקמניסטן": "Turkmenistan",
+      "ארצות הברית": "USA", "אמריקה": "USA", "ארה\"ב": "USA", "ארהב": "USA",
+      "אוגנדה": "Uganda",
+      "אוקראינה": "Ukraine",
+      "איחוד האמירויות": "United Arab Emirates", "אמירויות": "United Arab Emirates", "איחוד האמירויות הערביות": "United Arab Emirates",
+      "טנזניה": "United Republic of Tanzania",
+      "אורוגוואי": "Uruguay", "אורוגווי": "Uruguay",
+      "אוזבקיסטן": "Uzbekistan",
+      "ונואטו": "Vanuatu",
+      "ונצואלה": "Venezuela",
+      "וייטנאם": "Vietnam", "ויאטנם": "Vietnam",
+      "הגדה המערבית": "West Bank", "גדה מערבית": "West Bank",
+      "סהרה המערבית": "Western Sahara", "מערב סהרה": "Western Sahara",
+      "תימן": "Yemen",
+      "זמביה": "Zambia",
+      "זימבבואה": "Zimbabwe", "זימבבוה": "Zimbabwe"
+    };
+
+    // Reverse map: English → first Hebrew name (used for display).
+    const E2H = {};
+    Object.entries(H2E).forEach(([h, e]) => { if (!E2H[e]) E2H[e] = h; });
+
+    // ===== Normalization & lookup =====
+    function norm(text) {
+      return text
+        .replace(/[׳']/g, "'")   // normalize Hebrew apostrophes (geresh)
+        .replace(/[״"]/g, '"')   // normalize Hebrew quotes (gershayim)
+        .trim()
+        .toLowerCase();
+    }
+
+    function findCountry(spoken) {
+      const n = norm(spoken);
+      if (!n) return null;
+      // 1. Exact match
+      for (const [heb, eng] of Object.entries(H2E)) {
+        if (norm(heb) === n) return eng;
+      }
+      // 2. Substring match (spoken contains Hebrew name, or Hebrew name contains spoken)
+      for (const [heb, eng] of Object.entries(H2E)) {
+        const nh = norm(heb);
+        if (n.includes(nh) || nh.includes(n)) return eng;
+      }
+      return null;
+    }
+
+    // ===== Map rendering (D3) =====
+    const COLORS = ['#22c55e', '#f97316'];   // player 1 green, player 2 orange
+    const MAP_DEFAULT_FILL = '#1e3a5f';
+    let geoData = null;                        // loaded GeoJSON FeatureCollection
+
+    // Fetch the world GeoJSON once, up front.
+    function loadGeo() {
+      return fetch('https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson')
+        .then(r => {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
+        .then(data => { geoData = data; return data; });
+    }
+
+    // Draw the SVG map into #map-wrap, sized to the container.
+    function drawMap() {
+      const wrap = document.getElementById('map-wrap');
+      if (!geoData) return;
+
+      const w = wrap.clientWidth;
+      const h = wrap.clientHeight;
+      // Container not laid out yet — retry shortly.
+      if (!w || !h) { setTimeout(drawMap, 80); return; }
+
+      // Clear any previous render (e.g. on resize / new game).
+      wrap.innerHTML = '';
+
+      const projection = d3.geoNaturalEarth1()
+        .scale(w / 6.3)
+        .translate([w / 2, h / 2]);
+      const path = d3.geoPath().projection(projection);
+
+      const svg = d3.select(wrap).append('svg')
+        .attr('width', w)
+        .attr('height', h)
+        .attr('viewBox', `0 0 ${w} ${h}`);
+
+      svg.selectAll('path')
+        .data(geoData.features)
+        .enter()
+        .append('path')
+        .attr('d', path)
+        .attr('data-n', d => d.properties.name)
+        .attr('fill', MAP_DEFAULT_FILL)
+        .attr('stroke', '#0a1628')
+        .attr('stroke-width', 0.4);
+
+      // Re-apply colors for countries already named (after resize / redraw).
+      if (typeof guessed !== 'undefined') {
+        for (let p = 0; p < 2; p++) {
+          Object.keys(guessed[p]).forEach(eng => colorCountry(eng, p));
+        }
+      }
+    }
+
+    // Color a country's path(s) for the given player.
+    function colorCountry(engName, playerIndex) {
+      document.querySelectorAll(`[data-n="${engName}"]`)
+        .forEach(el => el.setAttribute('fill', COLORS[playerIndex]));
+    }
+
+    // Schedule a map draw after the game screen is visible & laid out.
+    function scheduleDrawMap() {
+      requestAnimationFrame(() => requestAnimationFrame(() => drawMap()));
+    }
+
+    // Redraw the map on resize when the game screen is active.
+    window.addEventListener('resize', () => {
+      if (document.getElementById('game-screen').classList.contains('active')) {
+        drawMap();
+      }
+    });
+
+    // Kick off the GeoJSON fetch immediately so it's ready by game start.
+    loadGeo().catch(err => console.error('Failed to load map data:', err));
+
+    // ===== Game state =====
+    const TIMEOUT_SECONDS = 5;
+    const CIRC = 2 * Math.PI * 20;   // countdown ring circumference (~125.66)
+
+    let playerNames = ['', ''];      // [player1Name, player2Name]
+    let currentPlayer = 0;           // 0 or 1
+    let guessed = [{}, {}];          // guessed[p][engName] = true
+    let passCount = [0, 0];          // consecutive timeouts per player
+    let countdownVal = TIMEOUT_SECONDS;
+    let countdownTimer = null;
+    let recognition = null;          // SpeechRecognition instance
+    let listening = false;
+    let turnResolved = false;        // true once a turn ends (success / timeout)
+
+    // ===== Small UI helpers =====
+    function setStatus(msg) {
+      document.getElementById('status-text').textContent = msg;
+    }
+    function showFeedback(type, msg) {
+      const fb = document.getElementById('feedback');
+      fb.className = '';
+      fb.classList.add(type, 'show');
+      fb.textContent = msg;
+    }
+    function clearFeedback() {
+      const fb = document.getElementById('feedback');
+      fb.className = '';
+      fb.textContent = '';
+    }
+    function updateHeader() {
+      document.getElementById('score1').textContent = Object.keys(guessed[0]).length;
+      document.getElementById('score2').textContent = Object.keys(guessed[1]).length;
+      document.getElementById('tag1').classList.toggle('active', currentPlayer === 0);
+      document.getElementById('tag2').classList.toggle('active', currentPlayer === 1);
+    }
+    function updateMic() {
+      const mic = document.getElementById('mic-btn');
+      if (listening) {
+        mic.classList.add('on');
+        mic.style.background = COLORS[currentPlayer];
+      } else {
+        mic.classList.remove('on');
+        mic.style.background = '';
+      }
+    }
+
+    // ===== Countdown ring =====
+    function renderCountdown() {
+      const v = Math.max(0, countdownVal);
+      const offset = CIRC * (1 - v / TIMEOUT_SECONDS);
+      const arc = document.getElementById('cdarc');
+      arc.style.strokeDashoffset = offset;
+      arc.style.stroke = COLORS[currentPlayer];
+      document.getElementById('cdtxt').textContent = v;
+    }
+    function startCountdown() {
+      clearInterval(countdownTimer);
+      countdownVal = TIMEOUT_SECONDS;
+      renderCountdown();
+      countdownTimer = setInterval(() => {
+        countdownVal--;
+        renderCountdown();
+        if (countdownVal <= 0) {
+          clearInterval(countdownTimer);
+          onTimeout();
+        }
+      }, 1000);
+    }
+
+    // ===== Speech recognition =====
+    function setupRecognition() {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) { recognition = null; return; }
+      recognition = new SR();
+      recognition.lang = 'he-IL';
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 5;
+
+      recognition.onresult = (e) => {
+        const res = e.results[e.results.length - 1];
+        if (res.isFinal) {
+          const firstSpoken = res[0].transcript;
+          let found = null;
+          for (let a = 0; a < res.length && a < 5; a++) {
+            const f = findCountry(res[a].transcript);
+            if (f) { found = f; break; }
+          }
+          handleSpoken(firstSpoken, found);
+        } else {
+          setStatus('🎤 ' + res[0].transcript);
+        }
+      };
+
+      recognition.onerror = (e) => {
+        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+          turnResolved = true;
+          clearInterval(countdownTimer);
+          showFeedback('error', 'אין גישה למיקרופון — צריך לפתוח דרך HTTPS ולאשר מיקרופון');
+          setStatus('שגיאת מיקרופון');
+        } else if (e.error === 'no-speech' || e.error === 'aborted') {
+          // common, not a real error — stay silent and keep listening
+        } else {
+          showFeedback('error', 'שגיאה: ' + e.error);
+        }
+      };
+
+      recognition.onend = () => {
+        listening = false;
+        updateMic();
+        // Utterance ended (continuous:false). If the turn isn't over, listen again.
+        if (!turnResolved && isGameActive()) {
+          setTimeout(safeStartListen, 120);
+        }
+      };
+    }
+
+    function isGameActive() {
+      return document.getElementById('game-screen').classList.contains('active');
+    }
+    function safeStartListen() {
+      if (!recognition || turnResolved || !isGameActive()) return;
+      try { recognition.start(); listening = true; updateMic(); }
+      catch (e) { /* already started */ }
+    }
+    function stopRecognition() {
+      if (recognition) { try { recognition.abort(); } catch (e) {} }
+      listening = false;
+      updateMic();
+    }
+
+    // ===== Turn flow =====
+    function handleSpoken(spokenText, foundEnglishName) {
+      clearInterval(countdownTimer);
+
+      if (!foundEnglishName) {
+        showFeedback('error', `"${spokenText}" — לא זיהיתי ארץ, נסה/י שוב`);
+        startCountdown();   // same player, fresh countdown
+        return;
+      }
+
+      if (guessed[0][foundEnglishName] || guessed[1][foundEnglishName]) {
+        showFeedback('duplicate', `${E2H[foundEnglishName]} כבר נאמרה! נסה/י ארץ אחרת`);
+        startCountdown();   // same player, fresh countdown
+        return;
+      }
+
+      // Success
+      turnResolved = true;
+      guessed[currentPlayer][foundEnglishName] = true;
+      passCount[currentPlayer] = 0;
+      colorCountry(foundEnglishName, currentPlayer);
+      updateHeader();
+      showFeedback('success', `✅ ${E2H[foundEnglishName]}`);
+      stopRecognition();
+      setTimeout(() => { clearFeedback(); nextTurn(); }, 1100);
+    }
+
+    function onTimeout() {
+      turnResolved = true;
+      stopRecognition();
+      passCount[currentPlayer]++;
+      // Game ends when BOTH players time out consecutively.
+      if (passCount[0] >= 1 && passCount[1] >= 1) {
+        setStatus('המשחק הסתיים');
+        setTimeout(showEndScreen, 300);
+      } else {
+        showFeedback('error', `${playerNames[currentPlayer]} לא הספיק/ה — התור עובר`);
+        setTimeout(nextTurn, 200);
+      }
+    }
+
+    function startTurn() {
+      turnResolved = false;
+      clearFeedback();
+      setStatus(`${playerNames[currentPlayer]}, תורך! אמור/י שם של מדינה`);
+      updateHeader();
+      renderCountdown();
+      startCountdown();
+      safeStartListen();
+    }
+
+    function nextTurn() {
+      currentPlayer = 1 - currentPlayer;
+      startTurn();
+    }
+
+    function startGame() {
+      playerNames = [name1El.value.trim(), name2El.value.trim()];
+      currentPlayer = 0;
+      guessed = [{}, {}];
+      passCount = [0, 0];
+      turnResolved = false;
+      document.getElementById('hname1').textContent = playerNames[0];
+      document.getElementById('hname2').textContent = playerNames[1];
+      showScreen('game-screen');
+      updateHeader();
+      setupRecognition();
+      scheduleDrawMap();
+      startTurn();
+    }
+
+    // Wire up buttons
+    startBtn.addEventListener('click', startGame);
+    document.getElementById('mic-btn').addEventListener('click', () => {
+      if (isGameActive() && !listening) safeStartListen();
+    });
+
+    // ===== End screen =====
+    function showEndScreen() {
+      clearInterval(countdownTimer);
+      stopRecognition();
+
+      const s0 = Object.keys(guessed[0]).length;
+      const s1 = Object.keys(guessed[1]).length;
+
+      // Winner banner
+      const banner = document.getElementById('winner-banner');
+      if (s0 > s1) {
+        banner.textContent = `🏆 ${playerNames[0]} ניצח/ה!`;
+        banner.style.color = COLORS[0];
+      } else if (s1 > s0) {
+        banner.textContent = `🏆 ${playerNames[1]} ניצח/ה!`;
+        banner.style.color = COLORS[1];
+      } else {
+        banner.textContent = '🤝 תיקו!';
+        banner.style.color = '#e2e8f0';
+      }
+
+      // Score cards
+      document.getElementById('end-name1').textContent = playerNames[0];
+      document.getElementById('end-name2').textContent = playerNames[1];
+      document.getElementById('end-score1').textContent = s0;
+      document.getElementById('end-score2').textContent = s1;
+
+      // Country lists (Hebrew display names)
+      fillCountryList('list1', 'list-title1', 0, s0);
+      fillCountryList('list2', 'list-title2', 1, s1);
+
+      showScreen('end-screen');
+    }
+
+    function fillCountryList(listId, titleId, playerIndex, count) {
+      document.getElementById(titleId).textContent = `${playerNames[playerIndex]} (${count})`;
+      const ul = document.getElementById(listId);
+      ul.innerHTML = '';
+      const names = Object.keys(guessed[playerIndex])
+        .map(eng => E2H[eng] || eng)
+        .sort((a, b) => a.localeCompare(b, 'he'));
+      if (names.length === 0) {
+        const li = document.createElement('li');
+        li.className = 'empty';
+        li.textContent = '— אין —';
+        ul.appendChild(li);
+        return;
+      }
+      names.forEach(h => {
+        const li = document.createElement('li');
+        li.textContent = h;
+        ul.appendChild(li);
+      });
+    }
+
+    // ===== New game =====
+    function newGame() {
+      clearInterval(countdownTimer);
+      stopRecognition();
+      currentPlayer = 0;
+      guessed = [{}, {}];
+      passCount = [0, 0];
+      turnResolved = false;
+      clearFeedback();
+      setStatus('לחץ על המיקרופון כדי להתחיל');
+      showScreen('setup-screen');
+      refreshStartBtn();
+    }
+    document.getElementById('newgame-btn').addEventListener('click', newGame);
+  </script>
+</body>
+</html>
