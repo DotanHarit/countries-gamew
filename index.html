@@ -278,6 +278,26 @@
 
     .card-area { font-size: 13px; color: #cbd5e1; margin-top: 4px; }
     .card-area.lead { color: #fff; font-weight: 800; }
+
+    #end-area-compare { width: 100%; }
+    #end-area-compare .eac-title {
+      font-size: 14px; color: #94a3b8; text-align: center; margin-bottom: 8px;
+    }
+    #end-area-compare .eac-labels {
+      display: flex; justify-content: space-between; margin-bottom: 6px;
+    }
+    #end-area-compare .eac-pct { font-size: 22px; font-weight: 900; }
+    #end-area-compare .eac-pct.p1 { color: var(--p1); }
+    #end-area-compare .eac-pct.p2 { color: var(--p2); }
+    #end-area-compare .eac-bar {
+      position: relative; height: 26px; border-radius: 13px;
+      background: var(--country); overflow: hidden;
+    }
+    #end-area-compare .eac-fill {
+      position: absolute; top: 0; bottom: 0; width: 0; transition: width .5s ease;
+    }
+    #end-area-compare .eac-fill.p1 { right: 0; background: var(--p1); }
+    #end-area-compare .eac-fill.p2 { left: 0; background: var(--p2); }
     .card-hints { font-size: 13px; color: #fde68a; margin-top: 4px; }
 
     #mic-btn {
@@ -461,6 +481,19 @@
             <div class="card-hints" id="end-hints2">💡 0 רמזים</div>
           </div>
         </div>
+
+        <div id="end-area-compare">
+          <div class="eac-title">🗺️ שליטה בשטח (% מיבשת העולם)</div>
+          <div class="eac-labels">
+            <span class="eac-pct p1" id="eac-pct1">0%</span>
+            <span class="eac-pct p2" id="eac-pct2">0%</span>
+          </div>
+          <div class="eac-bar">
+            <div class="eac-fill p1" id="eac-fill1"></div>
+            <div class="eac-fill p2" id="eac-fill2"></div>
+          </div>
+        </div>
+
         <div class="country-lists">
           <div class="country-col p1">
             <h3 id="list-title1">שחקן 1</h3>
@@ -1254,6 +1287,14 @@
       area2.textContent = `🗺️ ${pct1}% · ${fmtKm2(a1)}`;
       area1.classList.toggle('lead', a0 > a1);
       area2.classList.toggle('lead', a1 > a0);
+
+      // Prominent area-control comparison bar.
+      const exactPct0 = totalArea ? a0 / totalArea * 100 : 0;
+      const exactPct1 = totalArea ? a1 / totalArea * 100 : 0;
+      document.getElementById('eac-fill1').style.width = exactPct0 + '%';
+      document.getElementById('eac-fill2').style.width = exactPct1 + '%';
+      document.getElementById('eac-pct1').textContent = pct0 + '%';
+      document.getElementById('eac-pct2').textContent = pct1 + '%';
 
       document.getElementById('end-hints1').textContent = '💡 ' + hintCount[0] + ' רמזים';
       document.getElementById('end-hints2').textContent = '💡 ' + hintCount[1] + ' רמזים';
