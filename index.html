@@ -365,7 +365,218 @@
     name1El.addEventListener('input', refreshStartBtn);
     name2El.addEventListener('input', refreshStartBtn);
 
-    // Remaining game logic (dictionary, map, voice, turns) added in later steps.
+    // ===== Hebrew → English country dictionary =====
+    // English values must exactly match the GeoJSON `name` property (data-n).
+    // Multiple Hebrew keys may map to the same English country (aliases / spellings).
+    const H2E = {
+      "אפגניסטן": "Afghanistan",
+      "אלבניה": "Albania",
+      "אלג'יריה": "Algeria", "אלג'ריה": "Algeria",
+      "אנגולה": "Angola",
+      "אנטארקטיקה": "Antarctica", "אנטארקטיקה": "Antarctica",
+      "ארגנטינה": "Argentina",
+      "ארמניה": "Armenia",
+      "אוסטרליה": "Australia",
+      "אוסטריה": "Austria",
+      "אזרבייג'ן": "Azerbaijan", "אזרביג'ן": "Azerbaijan",
+      "בנגלדש": "Bangladesh",
+      "בלארוס": "Belarus", "רוסיה הלבנה": "Belarus",
+      "בלגיה": "Belgium",
+      "בליז": "Belize",
+      "בנין": "Benin",
+      "בהוטן": "Bhutan", "בוטאן": "Bhutan",
+      "בוליביה": "Bolivia",
+      "בוסניה": "Bosnia and Herzegovina", "בוסניה והרצגובינה": "Bosnia and Herzegovina",
+      "בוטסואנה": "Botswana",
+      "ברזיל": "Brazil",
+      "ברוניי": "Brunei",
+      "בולגריה": "Bulgaria",
+      "בורקינה פאסו": "Burkina Faso",
+      "בורונדי": "Burundi", "בורנדי": "Burundi",
+      "קמבודיה": "Cambodia",
+      "קמרון": "Cameroon",
+      "קנדה": "Canada",
+      "הרפובליקה המרכז אפריקאית": "Central African Republic", "מרכז אפריקה": "Central African Republic",
+      "צ'אד": "Chad", "צאד": "Chad",
+      "צ'ילה": "Chile", "צ'ילי": "Chile",
+      "סין": "China",
+      "קולומביה": "Colombia",
+      "קוסטה ריקה": "Costa Rica",
+      "קרואטיה": "Croatia",
+      "קובה": "Cuba",
+      "קפריסין": "Cyprus",
+      "צ'כיה": "Czech Republic", "הרפובליקה הצ'כית": "Czech Republic", "צ'כוסלובקיה": "Czech Republic",
+      "קונגו הדמוקרטית": "Democratic Republic of the Congo", "הרפובליקה הדמוקרטית של קונגו": "Democratic Republic of the Congo", "קינשסה": "Democratic Republic of the Congo", "זאיר": "Democratic Republic of the Congo",
+      "דנמרק": "Denmark",
+      "ג'יבוטי": "Djibouti",
+      "הרפובליקה הדומיניקנית": "Dominican Republic", "רפובליקה דומיניקנית": "Dominican Republic",
+      "מזרח טימור": "East Timor", "טימור": "East Timor", "טימור המזרחית": "East Timor",
+      "אקוודור": "Ecuador",
+      "מצרים": "Egypt",
+      "אל סלבדור": "El Salvador", "סלבדור": "El Salvador",
+      "אנגליה": "England", "בריטניה": "England", "אנגליה הגדולה": "England", "הממלכה המאוחדת": "England", "ממלכה מאוחדת": "England",
+      "גינאה המשוונית": "Equatorial Guinea", "גיניאה המשוונית": "Equatorial Guinea",
+      "אריתריאה": "Eritrea",
+      "אסטוניה": "Estonia",
+      "אתיופיה": "Ethiopia",
+      "איי פוקלנד": "Falkland Islands", "פוקלנד": "Falkland Islands",
+      "פיג'י": "Fiji",
+      "פינלנד": "Finland",
+      "צרפת": "France",
+      "אדמות הדרום הצרפתיות": "French Southern and Antarctic Lands",
+      "גבון": "Gabon",
+      "גמביה": "Gambia",
+      "גאורגיה": "Georgia", "גרוזיה": "Georgia",
+      "גרמניה": "Germany",
+      "גאנה": "Ghana",
+      "יוון": "Greece",
+      "גרינלנד": "Greenland",
+      "גואטמלה": "Guatemala",
+      "גינאה": "Guinea", "גיניאה": "Guinea",
+      "גינאה ביסאו": "Guinea Bissau", "גיניאה ביסאו": "Guinea Bissau",
+      "גיאנה": "Guyana", "גויאנה": "Guyana",
+      "האיטי": "Haiti",
+      "הונדורס": "Honduras",
+      "הונגריה": "Hungary",
+      "איסלנד": "Iceland",
+      "הודו": "India",
+      "אינדונזיה": "Indonesia",
+      "איראן": "Iran", "אירן": "Iran",
+      "עיראק": "Iraq", "עירק": "Iraq",
+      "אירלנד": "Ireland",
+      "ישראל": "Israel",
+      "איטליה": "Italy",
+      "חוף השנהב": "Ivory Coast",
+      "ג'מייקה": "Jamaica",
+      "יפן": "Japan",
+      "ירדן": "Jordan",
+      "קזחסטן": "Kazakhstan",
+      "קניה": "Kenya",
+      "קוסובו": "Kosovo",
+      "כווית": "Kuwait", "כוויית": "Kuwait",
+      "קירגיזסטן": "Kyrgyzstan", "קירגיסטן": "Kyrgyzstan",
+      "לאוס": "Laos",
+      "לטביה": "Latvia",
+      "לבנון": "Lebanon",
+      "לסוטו": "Lesotho",
+      "ליבריה": "Liberia",
+      "לוב": "Libya", "לוביה": "Libya",
+      "ליטא": "Lithuania", "ליטה": "Lithuania",
+      "לוקסמבורג": "Luxembourg",
+      "מקדוניה": "Macedonia", "מקדוניה הצפונית": "Macedonia",
+      "מדגסקר": "Madagascar",
+      "מלאווי": "Malawi", "מלווי": "Malawi",
+      "מלזיה": "Malaysia",
+      "מאלי": "Mali", "מלי": "Mali",
+      "מאוריטניה": "Mauritania", "מוריטניה": "Mauritania",
+      "מקסיקו": "Mexico",
+      "מולדובה": "Moldova",
+      "מונגוליה": "Mongolia",
+      "מונטנגרו": "Montenegro",
+      "מרוקו": "Morocco",
+      "מוזמביק": "Mozambique",
+      "מיאנמר": "Myanmar", "בורמה": "Myanmar",
+      "נמיביה": "Namibia",
+      "נפאל": "Nepal",
+      "הולנד": "Netherlands", "נדרלנד": "Netherlands",
+      "קלדוניה החדשה": "New Caledonia",
+      "ניו זילנד": "New Zealand", "ניו זילאנד": "New Zealand", "זילנד החדשה": "New Zealand",
+      "ניקרגואה": "Nicaragua",
+      "ניז'ר": "Niger",
+      "ניגריה": "Nigeria",
+      "צפון קוריאה": "North Korea", "קוריאה הצפונית": "North Korea",
+      "קפריסין הצפונית": "Northern Cyprus",
+      "נורווגיה": "Norway", "נורבגיה": "Norway",
+      "עומאן": "Oman", "עומן": "Oman",
+      "פקיסטן": "Pakistan",
+      "פנמה": "Panama",
+      "פפואה גינאה החדשה": "Papua New Guinea", "פפואה ניו גיני": "Papua New Guinea",
+      "פרגוואי": "Paraguay", "פרגוויי": "Paraguay",
+      "פרו": "Peru",
+      "הפיליפינים": "Philippines", "פיליפינים": "Philippines",
+      "פולין": "Poland",
+      "פורטוגל": "Portugal",
+      "פוארטו ריקו": "Puerto Rico", "פורטו ריקו": "Puerto Rico",
+      "קטאר": "Qatar", "קטר": "Qatar",
+      "סרביה": "Republic of Serbia",
+      "קונגו": "Republic of the Congo", "הרפובליקה של קונגו": "Republic of the Congo",
+      "רומניה": "Romania",
+      "רוסיה": "Russia",
+      "רואנדה": "Rwanda",
+      "ערב הסעודית": "Saudi Arabia", "סעודיה": "Saudi Arabia", "הסעודית": "Saudi Arabia",
+      "סנגל": "Senegal",
+      "סיירה לאון": "Sierra Leone", "סיירה ליאונה": "Sierra Leone",
+      "סלובקיה": "Slovakia",
+      "סלובניה": "Slovenia",
+      "איי שלמה": "Solomon Islands", "איי שלומה": "Solomon Islands",
+      "סומליה": "Somalia",
+      "סומלילנד": "Somaliland",
+      "דרום אפריקה": "South Africa",
+      "דרום קוריאה": "South Korea", "קוריאה הדרומית": "South Korea", "קוריאה": "South Korea",
+      "דרום סודאן": "South Sudan",
+      "ספרד": "Spain",
+      "סרי לנקה": "Sri Lanka",
+      "סודאן": "Sudan", "סודן": "Sudan",
+      "סורינאם": "Suriname", "סורינם": "Suriname",
+      "סווזילנד": "Swaziland", "אסוואטיני": "Swaziland",
+      "שבדיה": "Sweden", "שוודיה": "Sweden",
+      "שווייץ": "Switzerland", "שוויץ": "Switzerland",
+      "סוריה": "Syria",
+      "טייוואן": "Taiwan", "טייואן": "Taiwan",
+      "טג'יקיסטן": "Tajikistan",
+      "תאילנד": "Thailand", "תאילנד": "Thailand",
+      "איי בהאמה": "The Bahamas", "בהאמה": "The Bahamas", "בהאמס": "The Bahamas",
+      "טוגו": "Togo",
+      "טרינידד וטובגו": "Trinidad and Tobago", "טרינידד": "Trinidad and Tobago",
+      "תוניסיה": "Tunisia", "טוניסיה": "Tunisia",
+      "טורקיה": "Turkey", "תורכיה": "Turkey",
+      "טורקמניסטן": "Turkmenistan",
+      "ארצות הברית": "USA", "אמריקה": "USA", "ארה\"ב": "USA", "ארהב": "USA",
+      "אוגנדה": "Uganda",
+      "אוקראינה": "Ukraine",
+      "איחוד האמירויות": "United Arab Emirates", "אמירויות": "United Arab Emirates", "איחוד האמירויות הערביות": "United Arab Emirates",
+      "טנזניה": "United Republic of Tanzania",
+      "אורוגוואי": "Uruguay", "אורוגווי": "Uruguay",
+      "אוזבקיסטן": "Uzbekistan",
+      "ונואטו": "Vanuatu",
+      "ונצואלה": "Venezuela",
+      "וייטנאם": "Vietnam", "ויאטנם": "Vietnam",
+      "הגדה המערבית": "West Bank", "גדה מערבית": "West Bank",
+      "סהרה המערבית": "Western Sahara", "מערב סהרה": "Western Sahara",
+      "תימן": "Yemen",
+      "זמביה": "Zambia",
+      "זימבבואה": "Zimbabwe", "זימבבוה": "Zimbabwe"
+    };
+
+    // Reverse map: English → first Hebrew name (used for display).
+    const E2H = {};
+    Object.entries(H2E).forEach(([h, e]) => { if (!E2H[e]) E2H[e] = h; });
+
+    // ===== Normalization & lookup =====
+    function norm(text) {
+      return text
+        .replace(/[׳']/g, "'")   // normalize Hebrew apostrophes (geresh)
+        .replace(/[״"]/g, '"')   // normalize Hebrew quotes (gershayim)
+        .trim()
+        .toLowerCase();
+    }
+
+    function findCountry(spoken) {
+      const n = norm(spoken);
+      if (!n) return null;
+      // 1. Exact match
+      for (const [heb, eng] of Object.entries(H2E)) {
+        if (norm(heb) === n) return eng;
+      }
+      // 2. Substring match (spoken contains Hebrew name, or Hebrew name contains spoken)
+      for (const [heb, eng] of Object.entries(H2E)) {
+        const nh = norm(heb);
+        if (n.includes(nh) || nh.includes(n)) return eng;
+      }
+      return null;
+    }
+
+    // Remaining game logic (map, voice, turns) added in later steps.
   </script>
 </body>
 </html>
