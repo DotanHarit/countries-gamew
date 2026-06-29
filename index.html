@@ -182,8 +182,10 @@
       background: var(--ocean);
       overflow: hidden;
       min-height: 0;
+      touch-action: none;          /* let d3.zoom handle pinch/pan, not the browser */
     }
-    #map-wrap svg { display: block; width: 100%; height: 100%; }
+    #map-wrap svg { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+    #map-wrap svg:active { cursor: grabbing; }
 
     #panel {
       flex: 0 0 auto;
@@ -226,6 +228,7 @@
       white-space: nowrap;
     }
     #confirm-btn:active { transform: scale(0.97); }
+    #confirm-btn:disabled { background: var(--inactive); color: #64748b; cursor: not-allowed; transform: none; }
 
     #skip-btn {
       flex: 0 0 auto;
@@ -740,7 +743,10 @@
         .attr('height', h)
         .attr('viewBox', `0 0 ${w} ${h}`);
 
-      svg.selectAll('path')
+      // All paths live in a <g> that the zoom behavior transforms (pinch/pan/wheel).
+      const g = svg.append('g');
+
+      g.selectAll('path')
         .data(geoData.features)
         .enter()
         .append('path')
@@ -748,7 +754,15 @@
         .attr('data-n', d => d.properties.name)
         .attr('fill', MAP_DEFAULT_FILL)
         .attr('stroke', '#0a1628')
-        .attr('stroke-width', 0.4);
+        .attr('stroke-width', 0.4)
+        .attr('vector-effect', 'non-scaling-stroke');   // keep borders thin when zoomed
+
+      // Pinch-zoom, drag-pan, wheel and double-tap — like a maps app.
+      const zoom = d3.zoom()
+        .scaleExtent([1, 12])
+        .translateExtent([[0, 0], [w, h]])
+        .on('zoom', (event) => g.attr('transform', event.transform));
+      svg.call(zoom);
 
       // Re-apply colors for countries already named (after resize / redraw).
       if (typeof guessed !== 'undefined') {
@@ -792,6 +806,7 @@
 
     const wordInput = document.getElementById('word-input');
     const confirmBtn = document.getElementById('confirm-btn');
+    function setConfirmEnabled(on) { confirmBtn.disabled = !on; }
 
     // ===== Small UI helpers =====
     function setStatus(msg) {
@@ -864,6 +879,7 @@
             if (text) {
               wordInput.value = text;
               awaitingConfirm = true;
+              setConfirmEnabled(true);   // a fresh word to confirm
               setStatus('בדוק/י את המילה, ערוך/י אם צריך, ולחץ/י אשר ✓');
               stopListening();   // pause mic so the text isn't overwritten while editing
             }
@@ -978,6 +994,7 @@
       recognitionBlocked = false;
       awaitingConfirm = false;
       wordInput.value = '';
+      setConfirmEnabled(false);   // nothing to confirm yet
       clearFeedback();
       setStatus(`${playerNames[currentPlayer]}, תורך! אמור/י שם של מדינה ואשר/י`);
       updateHeader();
@@ -1013,14 +1030,23 @@
       recognitionBlocked = false;
       awaitingConfirm = false;
       wordInput.value = '';
+      setConfirmEnabled(false);
       clearFeedback();
       setStatus('🎤 מקשיב...');
       safeStartListen();
     });
-    confirmBtn.addEventListener('click', () => processWord(wordInput.value));
+    // Submit the (possibly edited) word, then lock the button until the text changes.
+    function submitWord() {
+      if (confirmBtn.disabled) return;
+      processWord(wordInput.value);
+      setConfirmEnabled(false);
+    }
+    confirmBtn.addEventListener('click', submitWord);
     wordInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); processWord(wordInput.value); }
+      if (e.key === 'Enter') { e.preventDefault(); submitWord(); }
     });
+    // Editing the text re-enables confirm (empty text keeps it disabled).
+    wordInput.addEventListener('input', () => setConfirmEnabled(!!wordInput.value.trim()));
     document.getElementById('skip-btn').addEventListener('click', skipTurn);
 
     // ===== End screen =====
@@ -1087,6 +1113,7 @@
       recognitionBlocked = false;
       awaitingConfirm = false;
       wordInput.value = '';
+      setConfirmEnabled(false);
       clearFeedback();
       setStatus('לחץ על המיקרופון כדי להתחיל');
       showScreen('setup-screen');
