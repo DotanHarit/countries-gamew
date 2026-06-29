@@ -276,6 +276,8 @@
     }
     .hint-slot.space { border-bottom: none; min-width: 8px; }
 
+    .card-area { font-size: 13px; color: #cbd5e1; margin-top: 4px; }
+    .card-area.lead { color: #fff; font-weight: 800; }
     .card-hints { font-size: 13px; color: #fde68a; margin-top: 4px; }
 
     #mic-btn {
@@ -449,11 +451,13 @@
           <div class="score-card p1">
             <div class="card-name" id="end-name1">שחקן 1</div>
             <div class="card-score" id="end-score1">0</div>
+            <div class="card-area" id="end-area1">🗺️ 0%</div>
             <div class="card-hints" id="end-hints1">💡 0 רמזים</div>
           </div>
           <div class="score-card p2">
             <div class="card-name" id="end-name2">שחקן 2</div>
             <div class="card-score" id="end-score2">0</div>
+            <div class="card-area" id="end-area2">🗺️ 0%</div>
             <div class="card-hints" id="end-hints2">💡 0 רמזים</div>
           </div>
         </div>
@@ -875,12 +879,24 @@
       updateAreaMeter();
     }
 
+    // Spherical area (steradians) of player p's claimed countries.
+    function playerAreaSr(p) {
+      let s = 0;
+      for (const eng of Object.keys(guessed[p])) s += (areaByName[eng] || 0);
+      return s;
+    }
     // Percentage of total land area held by player p (by claimed countries).
     function playerAreaPct(p) {
       if (!totalArea) return 0;
-      let s = 0;
-      for (const eng of Object.keys(guessed[p])) s += (areaByName[eng] || 0);
-      return s / totalArea * 100;
+      return playerAreaSr(p) / totalArea * 100;
+    }
+    // Approximate km² (Earth radius 6371 km; steradian -> km²).
+    const EARTH_R2 = 6371 * 6371;
+    function fmtKm2(sr) {
+      const km2 = sr * EARTH_R2;
+      if (km2 >= 1e6) return (km2 / 1e6).toFixed(1) + ' מ׳ ק״מ²';   // millions of km²
+      if (km2 >= 1e3) return Math.round(km2 / 1e3) + ' א׳ ק״מ²';     // thousands of km²
+      return Math.round(km2) + ' ק״מ²';
     }
     function updateAreaMeter() {
       const p1 = playerAreaPct(0), p2 = playerAreaPct(1);
@@ -1228,6 +1244,17 @@
       document.getElementById('end-name2').textContent = playerNames[1];
       document.getElementById('end-score1').textContent = s0;
       document.getElementById('end-score2').textContent = s1;
+      // Total land area of each player's countries (% of world land + km²).
+      const a0 = playerAreaSr(0), a1 = playerAreaSr(1);
+      const pct0 = totalArea ? Math.round(a0 / totalArea * 100) : 0;
+      const pct1 = totalArea ? Math.round(a1 / totalArea * 100) : 0;
+      const area1 = document.getElementById('end-area1');
+      const area2 = document.getElementById('end-area2');
+      area1.textContent = `🗺️ ${pct0}% · ${fmtKm2(a0)}`;
+      area2.textContent = `🗺️ ${pct1}% · ${fmtKm2(a1)}`;
+      area1.classList.toggle('lead', a0 > a1);
+      area2.classList.toggle('lead', a1 > a0);
+
       document.getElementById('end-hints1').textContent = '💡 ' + hintCount[0] + ' רמזים';
       document.getElementById('end-hints2').textContent = '💡 ' + hintCount[1] + ' רמזים';
 
