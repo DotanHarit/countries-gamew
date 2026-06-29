@@ -205,6 +205,7 @@
     #feedback.success { background: #14532d; border-color: var(--p1); color: #bbf7d0; }
     #feedback.duplicate { background: #1e3a5f; border-color: #3b82f6; color: #bfdbfe; }
     #feedback.error { background: #450a0a; border-color: #ef4444; color: #fecaca; }
+    #feedback.hint { background: #1e293b; border-color: #64748b; color: #cbd5e1; }
     #status-text {
       font-size: 14px; color: #94a3b8;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -765,9 +766,15 @@
       if (turnResolved) return;
 
       if (!foundEnglishName) {
-        // Not a country — stay on the same player, keep listening.
-        showFeedback('error', `"${spokenText}" — לא זיהיתי ארץ, נסה/י שוב`);
-        return;
+        // Not a country. No red alarm — if we actually understood a word,
+        // show it neutrally and ask to try again; otherwise just keep listening.
+        const heard = (spokenText || '').trim();
+        if (heard) {
+          showFeedback('hint', `הבנתי "${heard}" — זו לא מדינה שאני מזהה, נסה/י שוב`);
+        } else {
+          clearFeedback();
+        }
+        return; // same player, keep listening
       }
 
       if (guessed[0][foundEnglishName] || guessed[1][foundEnglishName]) {
