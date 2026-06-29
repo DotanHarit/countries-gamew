@@ -653,7 +653,220 @@
     // Kick off the GeoJSON fetch immediately so it's ready by game start.
     loadGeo().catch(err => console.error('Failed to load map data:', err));
 
-    // Remaining game logic (voice, turns) added in later steps.
+    // ===== Game state =====
+    const TIMEOUT_SECONDS = 5;
+    const CIRC = 2 * Math.PI * 20;   // countdown ring circumference (~125.66)
+
+    let playerNames = ['', ''];      // [player1Name, player2Name]
+    let currentPlayer = 0;           // 0 or 1
+    let guessed = [{}, {}];          // guessed[p][engName] = true
+    let passCount = [0, 0];          // consecutive timeouts per player
+    let countdownVal = TIMEOUT_SECONDS;
+    let countdownTimer = null;
+    let recognition = null;          // SpeechRecognition instance
+    let listening = false;
+    let turnResolved = false;        // true once a turn ends (success / timeout)
+
+    // ===== Small UI helpers =====
+    function setStatus(msg) {
+      document.getElementById('status-text').textContent = msg;
+    }
+    function showFeedback(type, msg) {
+      const fb = document.getElementById('feedback');
+      fb.className = '';
+      fb.classList.add(type, 'show');
+      fb.textContent = msg;
+    }
+    function clearFeedback() {
+      const fb = document.getElementById('feedback');
+      fb.className = '';
+      fb.textContent = '';
+    }
+    function updateHeader() {
+      document.getElementById('score1').textContent = Object.keys(guessed[0]).length;
+      document.getElementById('score2').textContent = Object.keys(guessed[1]).length;
+      document.getElementById('tag1').classList.toggle('active', currentPlayer === 0);
+      document.getElementById('tag2').classList.toggle('active', currentPlayer === 1);
+    }
+    function updateMic() {
+      const mic = document.getElementById('mic-btn');
+      if (listening) {
+        mic.classList.add('on');
+        mic.style.background = COLORS[currentPlayer];
+      } else {
+        mic.classList.remove('on');
+        mic.style.background = '';
+      }
+    }
+
+    // ===== Countdown ring =====
+    function renderCountdown() {
+      const v = Math.max(0, countdownVal);
+      const offset = CIRC * (1 - v / TIMEOUT_SECONDS);
+      const arc = document.getElementById('cdarc');
+      arc.style.strokeDashoffset = offset;
+      arc.style.stroke = COLORS[currentPlayer];
+      document.getElementById('cdtxt').textContent = v;
+    }
+    function startCountdown() {
+      clearInterval(countdownTimer);
+      countdownVal = TIMEOUT_SECONDS;
+      renderCountdown();
+      countdownTimer = setInterval(() => {
+        countdownVal--;
+        renderCountdown();
+        if (countdownVal <= 0) {
+          clearInterval(countdownTimer);
+          onTimeout();
+        }
+      }, 1000);
+    }
+
+    // ===== Speech recognition =====
+    function setupRecognition() {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) { recognition = null; return; }
+      recognition = new SR();
+      recognition.lang = 'he-IL';
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 5;
+
+      recognition.onresult = (e) => {
+        const res = e.results[e.results.length - 1];
+        if (res.isFinal) {
+          const firstSpoken = res[0].transcript;
+          let found = null;
+          for (let a = 0; a < res.length && a < 5; a++) {
+            const f = findCountry(res[a].transcript);
+            if (f) { found = f; break; }
+          }
+          handleSpoken(firstSpoken, found);
+        } else {
+          setStatus('🎤 ' + res[0].transcript);
+        }
+      };
+
+      recognition.onerror = (e) => {
+        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+          turnResolved = true;
+          clearInterval(countdownTimer);
+          showFeedback('error', 'אין גישה למיקרופון — צריך לפתוח דרך HTTPS ולאשר מיקרופון');
+          setStatus('שגיאת מיקרופון');
+        } else if (e.error === 'no-speech' || e.error === 'aborted') {
+          // common, not a real error — stay silent and keep listening
+        } else {
+          showFeedback('error', 'שגיאה: ' + e.error);
+        }
+      };
+
+      recognition.onend = () => {
+        listening = false;
+        updateMic();
+        // Utterance ended (continuous:false). If the turn isn't over, listen again.
+        if (!turnResolved && isGameActive()) {
+          setTimeout(safeStartListen, 120);
+        }
+      };
+    }
+
+    function isGameActive() {
+      return document.getElementById('game-screen').classList.contains('active');
+    }
+    function safeStartListen() {
+      if (!recognition || turnResolved || !isGameActive()) return;
+      try { recognition.start(); listening = true; updateMic(); }
+      catch (e) { /* already started */ }
+    }
+    function stopRecognition() {
+      if (recognition) { try { recognition.abort(); } catch (e) {} }
+      listening = false;
+      updateMic();
+    }
+
+    // ===== Turn flow =====
+    function handleSpoken(spokenText, foundEnglishName) {
+      clearInterval(countdownTimer);
+
+      if (!foundEnglishName) {
+        showFeedback('error', `"${spokenText}" — לא זיהיתי ארץ, נסה/י שוב`);
+        startCountdown();   // same player, fresh countdown
+        return;
+      }
+
+      if (guessed[0][foundEnglishName] || guessed[1][foundEnglishName]) {
+        showFeedback('duplicate', `${E2H[foundEnglishName]} כבר נאמרה! נסה/י ארץ אחרת`);
+        startCountdown();   // same player, fresh countdown
+        return;
+      }
+
+      // Success
+      turnResolved = true;
+      guessed[currentPlayer][foundEnglishName] = true;
+      passCount[currentPlayer] = 0;
+      colorCountry(foundEnglishName, currentPlayer);
+      updateHeader();
+      showFeedback('success', `✅ ${E2H[foundEnglishName]}`);
+      stopRecognition();
+      setTimeout(() => { clearFeedback(); nextTurn(); }, 1100);
+    }
+
+    function onTimeout() {
+      turnResolved = true;
+      stopRecognition();
+      passCount[currentPlayer]++;
+      // Game ends when BOTH players time out consecutively.
+      if (passCount[0] >= 1 && passCount[1] >= 1) {
+        setStatus('המשחק הסתיים');
+        setTimeout(showEndScreen, 300);
+      } else {
+        showFeedback('error', `${playerNames[currentPlayer]} לא הספיק/ה — התור עובר`);
+        setTimeout(nextTurn, 200);
+      }
+    }
+
+    function startTurn() {
+      turnResolved = false;
+      clearFeedback();
+      setStatus(`${playerNames[currentPlayer]}, תורך! אמור/י שם של מדינה`);
+      updateHeader();
+      renderCountdown();
+      startCountdown();
+      safeStartListen();
+    }
+
+    function nextTurn() {
+      currentPlayer = 1 - currentPlayer;
+      startTurn();
+    }
+
+    function startGame() {
+      playerNames = [name1El.value.trim(), name2El.value.trim()];
+      currentPlayer = 0;
+      guessed = [{}, {}];
+      passCount = [0, 0];
+      turnResolved = false;
+      document.getElementById('hname1').textContent = playerNames[0];
+      document.getElementById('hname2').textContent = playerNames[1];
+      showScreen('game-screen');
+      updateHeader();
+      setupRecognition();
+      scheduleDrawMap();
+      startTurn();
+    }
+
+    // Wire up buttons
+    startBtn.addEventListener('click', startGame);
+    document.getElementById('mic-btn').addEventListener('click', () => {
+      if (isGameActive() && !listening) safeStartListen();
+    });
+
+    // showEndScreen is fully implemented in Step 5; minimal version for now.
+    function showEndScreen() {
+      clearInterval(countdownTimer);
+      stopRecognition();
+      showScreen('end-screen');
+    }
   </script>
 </body>
 </html>
