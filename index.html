@@ -780,10 +780,11 @@
       "Saint Kitts and Nevis","Saint Lucia","Saint Vincent and the Grenadines","Samoa",
       "San Marino","Sao Tome and Principe","Seychelles","Singapore","Tonga","Tuvalu"];
 
-    // Map features that are NOT UN members -> excluded from the official list
-    // (Palestine/West Bank, disputed states, and dependencies).
-    const NON_MEMBERS = new Set(["Taiwan","Kosovo","Somaliland","Northern Cyprus",
-      "Western Sahara","West Bank","Greenland","Puerto Rico","New Caledonia",
+    // Map features excluded from the official list (Palestine/West Bank, disputed
+    // states, and dependencies). Taiwan, Puerto Rico and Somaliland are kept in
+    // the list by choice even though they aren't full UN members.
+    const NON_MEMBERS = new Set(["Kosovo","Northern Cyprus",
+      "Western Sahara","West Bank","Greenland","New Caledonia",
       "French Southern and Antarctic Lands","Falkland Islands","Antarctica"]);
 
     // The official country set = UN members (UK split into its 4 nations) + Vatican
