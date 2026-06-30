@@ -276,6 +276,21 @@
     }
     .hint-slot.space { border-bottom: none; min-width: 8px; }
 
+    #unsaid-section { width: 100%; }
+    #unsaid-section h3 { font-size: 14px; color: #94a3b8; text-align: center; margin-bottom: 8px; }
+    #unsaid-list {
+      display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;
+      max-height: 180px; overflow-y: auto;
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 12px; padding: 10px;
+    }
+    #unsaid-list .pill {
+      font-size: 13px; color: #cbd5e1;
+      background: #0d1b2e; border: 1px solid var(--border);
+      border-radius: 999px; padding: 3px 10px; white-space: nowrap;
+    }
+    #unsaid-list .empty { color: #64748b; font-size: 13px; }
+
     .card-area { font-size: 13px; color: #cbd5e1; margin-top: 4px; }
     .card-area.lead { color: #fff; font-weight: 800; }
 
@@ -503,6 +518,10 @@
             <h3 id="list-title2">שחקן 2</h3>
             <ul id="list2"></ul>
           </div>
+        </div>
+        <div id="unsaid-section">
+          <h3 id="unsaid-title">מדינות שלא נאמרו</h3>
+          <div id="unsaid-list"></div>
         </div>
         <button class="btn" id="newgame-btn">משחק חדש</button>
       </div>
@@ -1303,7 +1322,34 @@
       fillCountryList('list1', 'list-title1', 0, s0);
       fillCountryList('list2', 'list-title2', 1, s1);
 
+      // All countries that were NOT named, alphabetically (Hebrew).
+      fillUnsaidList();
+
       showScreen('end-screen');
+    }
+
+    function fillUnsaidList() {
+      const taken = new Set([...Object.keys(guessed[0]), ...Object.keys(guessed[1])]);
+      const names = (geoData ? geoData.features.map(f => f.properties.name) : [])
+        .filter(n => !taken.has(n))
+        .map(eng => E2H[eng] || eng)
+        .sort((a, b) => a.localeCompare(b, 'he'));
+      document.getElementById('unsaid-title').textContent = `מדינות שלא נאמרו (${names.length})`;
+      const box = document.getElementById('unsaid-list');
+      box.innerHTML = '';
+      if (!names.length) {
+        const e = document.createElement('span');
+        e.className = 'empty';
+        e.textContent = '🎉 כל המדינות נאמרו!';
+        box.appendChild(e);
+        return;
+      }
+      names.forEach(h => {
+        const pill = document.createElement('span');
+        pill.className = 'pill';
+        pill.textContent = h;
+        box.appendChild(pill);
+      });
     }
 
     function fillCountryList(listId, titleId, playerIndex, count) {
