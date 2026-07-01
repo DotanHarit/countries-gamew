@@ -865,7 +865,9 @@
     const COLORS = ['#22c55e', '#f97316'];   // player 1 green, player 2 orange
     const MAP_DEFAULT_FILL = '#1e3a5f';
     const MAP_OCEAN = '#0a1628';              // used to "hide" marked countries
+    const HINT_PINK = '#ec4899';              // highlight for the country being hinted
     let hideMarked = false;                   // when true, claimed countries blend into the ocean
+    let hintPaintedName = null;               // country currently highlighted pink by a hint
     let geoData = null;                        // loaded GeoJSON FeatureCollection
     let areaByName = {};                       // English name -> spherical area (steradians)
     let totalArea = 0;                         // sum of all countries' areas
@@ -964,6 +966,7 @@
           Object.keys(guessed[p]).forEach(eng => colorCountry(eng, p));
         }
       }
+      if (hintPaintedName) paintCountry(hintPaintedName, HINT_PINK);   // keep hint highlight
     }
 
     // Color a country's path(s) for the given player (or hide it when the
@@ -974,15 +977,31 @@
         .forEach(el => el.setAttribute('fill', fill));
     }
 
+    // The correct fill for a country given current claims + hideMarked.
+    function naturalFill(name) {
+      if (guessed[0][name]) return hideMarked ? MAP_OCEAN : COLORS[0];
+      if (guessed[1][name]) return hideMarked ? MAP_OCEAN : COLORS[1];
+      return MAP_DEFAULT_FILL;
+    }
+    function paintCountry(name, color) {
+      document.querySelectorAll(`[data-n="${name}"]`).forEach(el => el.setAttribute('fill', color));
+    }
+    // Highlight the current hint target in pink (only while hinting).
+    function paintHintTarget() {
+      if (!hintTarget) return;
+      hintPaintedName = hintTarget;
+      paintCountry(hintTarget, HINT_PINK);
+    }
+    function clearHintPaint() {
+      if (hintPaintedName) { paintCountry(hintPaintedName, naturalFill(hintPaintedName)); hintPaintedName = null; }
+    }
+
     // Recolor the whole map according to the current claims + hideMarked state.
     function refreshMap() {
       document.querySelectorAll('#map-wrap svg [data-n]').forEach(el => {
-        const name = el.getAttribute('data-n');
-        let fill = MAP_DEFAULT_FILL;
-        if (guessed[0][name]) fill = hideMarked ? MAP_OCEAN : COLORS[0];
-        else if (guessed[1][name]) fill = hideMarked ? MAP_OCEAN : COLORS[1];
-        el.setAttribute('fill', fill);
+        el.setAttribute('fill', naturalFill(el.getAttribute('data-n')));
       });
+      if (hintPaintedName) paintCountry(hintPaintedName, HINT_PINK);   // keep the hint highlight
     }
     function setHideMarked(on) {
       hideMarked = on;
@@ -1138,6 +1157,7 @@
       document.getElementById('hints2').textContent = '💡' + hintCount[1];
     }
     function clearHint() {
+      clearHintPaint();        // remove the pink highlight
       const box = document.getElementById('hint-box');
       box.classList.add('hidden');
       box.innerHTML = '';
@@ -1199,6 +1219,7 @@
         if (!pool.length) { setStatus('כל המדינות כבר זוהו — אין רמזים'); return; }
         hintTarget = pool[Math.floor(Math.random() * pool.length)];
         hintStage = 0;
+        paintHintTarget();   // highlight it pink on the map while hinting
       }
       if (hintStage >= 3) {
         setStatus('נגמרו הרמזים — דלג/י כדי להעביר את התור');
