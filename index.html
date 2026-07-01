@@ -93,7 +93,23 @@
     }
 
     /* ---------- Screen 2: Game ---------- */
-    #game-screen { height: 100%; }
+    #game-screen { height: 100%; position: relative; }
+
+    #toggle-marked {
+      position: absolute;
+      top: 84px; left: 8px;
+      z-index: 5;
+      padding: 7px 11px;
+      font-size: 12px; font-weight: 700;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: rgba(13, 27, 46, 0.85);
+      color: #cbd5e1;
+      cursor: pointer;
+      backdrop-filter: blur(2px);
+    }
+    #toggle-marked:active { transform: scale(0.97); }
+    #toggle-marked.active { background: var(--p1); color: #052e16; border-color: var(--p1); }
 
     #header {
       flex: 0 0 auto;
@@ -470,6 +486,7 @@
       </div>
 
       <div id="map-wrap"></div>
+      <button id="toggle-marked" aria-label="הצג רק מדינות שלא סומנו">🙈 מה שנשאר</button>
 
       <div id="panel">
         <div id="hint-box" class="hidden"></div>
@@ -847,6 +864,8 @@
     // ===== Map rendering (D3) =====
     const COLORS = ['#22c55e', '#f97316'];   // player 1 green, player 2 orange
     const MAP_DEFAULT_FILL = '#1e3a5f';
+    const MAP_OCEAN = '#0a1628';              // used to "hide" marked countries
+    let hideMarked = false;                   // when true, claimed countries blend into the ocean
     let geoData = null;                        // loaded GeoJSON FeatureCollection
     let areaByName = {};                       // English name -> spherical area (steradians)
     let totalArea = 0;                         // sum of all countries' areas
@@ -947,10 +966,30 @@
       }
     }
 
-    // Color a country's path(s) for the given player.
+    // Color a country's path(s) for the given player (or hide it when the
+    // "show only what's left" toggle is on).
     function colorCountry(engName, playerIndex) {
+      const fill = hideMarked ? MAP_OCEAN : COLORS[playerIndex];
       document.querySelectorAll(`[data-n="${engName}"]`)
-        .forEach(el => el.setAttribute('fill', COLORS[playerIndex]));
+        .forEach(el => el.setAttribute('fill', fill));
+    }
+
+    // Recolor the whole map according to the current claims + hideMarked state.
+    function refreshMap() {
+      document.querySelectorAll('#map-wrap svg [data-n]').forEach(el => {
+        const name = el.getAttribute('data-n');
+        let fill = MAP_DEFAULT_FILL;
+        if (guessed[0][name]) fill = hideMarked ? MAP_OCEAN : COLORS[0];
+        else if (guessed[1][name]) fill = hideMarked ? MAP_OCEAN : COLORS[1];
+        el.setAttribute('fill', fill);
+      });
+    }
+    function setHideMarked(on) {
+      hideMarked = on;
+      const btn = document.getElementById('toggle-marked');
+      btn.classList.toggle('active', hideMarked);
+      btn.textContent = hideMarked ? '👁 הצג הכל' : '🙈 מה שנשאר';
+      refreshMap();
     }
 
     // Schedule a map draw after the game screen is visible & laid out.
@@ -983,6 +1022,8 @@
     let guessed = [{}, {}];          // guessed[p][engName] = true (a country can be taken once, by either player)
     let consecutiveSkips = 0;        // skips in a row (2 in a row ends the game)
     let hintCount = [0, 0];          // number of hints each player has requested
+    let hintTarget = null;           // the country being progressively hinted this turn
+    let hintStage = 0;               // 0..3: first letter -> flag -> first+last letter
     let recognition = null;          // SpeechRecognition instance
     let listening = false;
     let turnResolved = false;        // true once the current turn ends (success / skip)
@@ -1101,24 +1142,29 @@
       box.classList.add('hidden');
       box.innerHTML = '';
     }
-    // Country name as letter slots: first letter shown, the rest blank underscores.
-    function showLetterHint(engName) {
+    // Country name as letter slots: first letter shown (and last too if showLast),
+    // the rest blank underscores.
+    function showLetterHint(engName, showLast) {
       const heb = E2H[engName] || engName;
+      const chars = [...heb];
+      const letterIdx = [];
+      chars.forEach((c, i) => { if (c !== ' ') letterIdx.push(i); });
+      const firstI = letterIdx[0];
+      const lastI = letterIdx[letterIdx.length - 1];
       const box = document.getElementById('hint-box');
       const slots = document.createElement('div');
       slots.className = 'hint-slots';
-      let firstShown = false;
-      for (const ch of heb) {
+      chars.forEach((ch, i) => {
         const slot = document.createElement('div');
         if (ch === ' ') {
           slot.className = 'hint-slot space';
         } else {
           slot.className = 'hint-slot';
-          if (!firstShown) { slot.textContent = ch; firstShown = true; }
-          else { slot.innerHTML = '&nbsp;'; }
+          if (i === firstI || (showLast && i === lastI)) slot.textContent = ch;
+          else slot.innerHTML = '&nbsp;';
         }
         slots.appendChild(slot);
-      }
+      });
       box.innerHTML = '';
       const tag = document.createElement('span');
       tag.className = 'hint-tag';
@@ -1143,20 +1189,33 @@
       box.appendChild(img);
       box.classList.remove('hidden');
     }
+    // Progressive hint for one target country per turn:
+    // 1st press = first letter, 2nd = flag, 3rd = first + last letter. No more after that.
     function giveHint() {
       if (!isGameActive() || turnResolved) return;
-      const taken = new Set([...Object.keys(guessed[0]), ...Object.keys(guessed[1])]);
-      const pool = [...OFFICIAL].filter(n => !taken.has(n));
-      if (!pool.length) {
-        setStatus('כל המדינות כבר זוהו — אין רמזים');
+      if (!hintTarget) {
+        const taken = new Set([...Object.keys(guessed[0]), ...Object.keys(guessed[1])]);
+        const pool = [...OFFICIAL].filter(n => !taken.has(n));
+        if (!pool.length) { setStatus('כל המדינות כבר זוהו — אין רמזים'); return; }
+        hintTarget = pool[Math.floor(Math.random() * pool.length)];
+        hintStage = 0;
+      }
+      if (hintStage >= 3) {
+        setStatus('נגמרו הרמזים — דלג/י כדי להעביר את התור');
         return;
       }
+      hintStage++;
       hintCount[currentPlayer]++;
       updateHintCounters();
-      const name = pool[Math.floor(Math.random() * pool.length)];
-      const iso = NAME2ISO[name];
-      if (iso && Math.random() < 0.5) showFlagHint(name, iso);
-      else showLetterHint(name);
+      if (hintStage === 1) {
+        showLetterHint(hintTarget, false);            // first letter
+      } else if (hintStage === 2) {
+        const iso = NAME2ISO[hintTarget];
+        if (iso) showFlagHint(hintTarget, iso);       // flag
+        else showLetterHint(hintTarget, false);
+      } else {
+        showLetterHint(hintTarget, true);             // first + last letter
+      }
     }
 
     function updateMic() {
@@ -1304,6 +1363,8 @@
       turnResolved = false;
       recognitionBlocked = false;
       awaitingConfirm = false;
+      hintTarget = null;          // fresh hint target each turn
+      hintStage = 0;
       wordInput.value = '';
       setConfirmEnabled(false);   // nothing to confirm yet
       clearHint();
@@ -1330,6 +1391,7 @@
       document.getElementById('hname2').textContent = playerNames[1];
       updateHintCounters();
       clearHint();
+      setHideMarked(false);        // reset the "show only what's left" toggle
       showScreen('game-screen');
       updateHeader();
       setupRecognition();
@@ -1364,6 +1426,7 @@
     wordInput.addEventListener('input', () => setConfirmEnabled(!!wordInput.value.trim()));
     document.getElementById('skip-btn').addEventListener('click', skipTurn);
     document.getElementById('hint-btn').addEventListener('click', giveHint);
+    document.getElementById('toggle-marked').addEventListener('click', () => setHideMarked(!hideMarked));
 
     // ===== End screen =====
     function showEndScreen() {
