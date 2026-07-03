@@ -1462,11 +1462,33 @@
       clearHint();
       setHideMarked(false);        // reset the "show only what's left" toggle
       showScreen('game-screen');
+      leavingGame = false;
+      armBackGuard();              // guard the back button while playing
       updateHeader();
       setupRecognition();
       scheduleDrawMap();
       startTurn();
     }
+
+    // ===== Guard against accidentally leaving an active game =====
+    let leavingGame = false;
+    function armBackGuard() {
+      try { history.pushState({ game: true }, ''); } catch (e) {}
+    }
+    // Back button / back-swipe: intercept and confirm instead of leaving.
+    window.addEventListener('popstate', () => {
+      if (!isGameActive() || leavingGame) return;
+      if (confirm('לצאת מהמשחק? ההתקדמות תימחק.\n\nאישור = יציאה · ביטול = להמשיך לשחק')) {
+        leavingGame = true;
+        history.back();     // let the navigation through
+      } else {
+        armBackGuard();     // re-arm and stay on the game
+      }
+    });
+    // Refresh / close / navigate away: native "Leave/Reload site?" prompt.
+    window.addEventListener('beforeunload', (e) => {
+      if (isGameActive() && !leavingGame) { e.preventDefault(); e.returnValue = ''; }
+    });
 
     // Wire up buttons
     startBtn.addEventListener('click', startGame);
