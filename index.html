@@ -1042,9 +1042,9 @@
 
     // Recolor the whole map according to the current claims + hideMarked state.
     function refreshMap() {
-      document.querySelectorAll('#map-wrap svg [data-n]').forEach(el => {
-        el.setAttribute('fill', naturalFill(el.getAttribute('data-n')));
-      });
+      const paths = document.querySelectorAll('#map-wrap svg [data-n]');
+      if (!paths.length) return;   // map not drawn yet — nothing to recolor
+      paths.forEach(el => el.setAttribute('fill', naturalFill(el.getAttribute('data-n'))));
       if (hintPaintedName) paintCountry(hintPaintedName, HINT_PINK);   // keep the hint highlight
     }
     function setHideMarked(on) {
