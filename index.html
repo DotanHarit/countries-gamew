@@ -948,7 +948,9 @@
         .attr('viewBox', `0 0 ${w} ${h}`);
 
       // All paths live in a <g> that the zoom behavior transforms (pinch/pan/wheel).
+      // Promote it to its own compositor layer so zoom/pan is a cheap GPU transform.
       const g = svg.append('g');
+      g.node().style.willChange = 'transform';
       mapProjection = projection;
       mapG = g.node();
 
@@ -960,8 +962,10 @@
         .attr('data-n', d => d.properties.name)
         .attr('fill', MAP_DEFAULT_FILL)
         .attr('stroke', '#0a1628')
-        .attr('stroke-width', 0.4)
-        .attr('vector-effect', 'non-scaling-stroke');   // keep borders thin when zoomed
+        .attr('stroke-width', 0.5);
+        // NOTE: no vector-effect:non-scaling-stroke — it forces every border to
+        // re-rasterize on each zoom frame (~180 paths), which made zoom laggy.
+        // Letting strokes scale keeps the transform GPU-composited and smooth.
 
       // Pinch-zoom, drag-pan, wheel and double-tap — like a maps app.
       const zoom = d3.zoom()
