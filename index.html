@@ -446,13 +446,87 @@
     .country-col.p1 li { background: rgba(34,197,94,0.1); margin-bottom: 3px; }
     .country-col.p2 li { background: rgba(249,115,22,0.1); margin-bottom: 3px; }
     .country-col .empty { color: #64748b; font-size: 13px; text-align: center; }
+
+    /* ---------- Home / Lobby (online) ---------- */
+    .btn.ghost { background: transparent; border: 2px solid var(--border); color: #cbd5e1; }
+    .btn.wa-btn { background: #25d366; color: #05310f; }
+    .mp-error { font-size: 14px; color: #fecaca; background: #450a0a; border: 1px solid #ef4444;
+      border-radius: 10px; padding: 10px 12px; }
+    .mp-status { font-size: 13px; color: #94a3b8; min-height: 18px; }
+    .join-code-label { font-size: 15px; color: #cbd5e1; margin-bottom: 10px; }
+    .join-code-label b { color: var(--p1); letter-spacing: 2px; }
+
+    #lobby-screen { align-items: center; justify-content: flex-start; padding: 24px 16px; overflow-y: auto; }
+    .lobby-inner { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 16px; align-items: center; }
+    .lobby-inner h1 { font-size: 24px; }
+    .lobby-code-box { text-align: center; background: var(--panel); border: 1px solid var(--border);
+      border-radius: 14px; padding: 12px 24px; width: 100%; }
+    .lobby-code-label { font-size: 13px; color: #94a3b8; }
+    .lobby-code { font-size: 40px; font-weight: 900; letter-spacing: 8px; color: #e2e8f0; }
+    .lobby-players { width: 100%; background: var(--panel); border: 1px solid var(--border);
+      border-radius: 14px; padding: 14px; }
+    .lobby-players h3 { font-size: 15px; margin-bottom: 10px; text-align: center; color: #cbd5e1; }
+    .lobby-players ul { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+    .lobby-players li { display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+      background: #0d1b2e; border: 1px solid var(--border); border-radius: 10px; }
+    .lobby-players li .pdot { width: 14px; height: 14px; border-radius: 50%; flex: 0 0 auto; background: var(--inactive); }
+    .lobby-players li .pname { flex: 1 1 auto; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .lobby-players li .pbadge { font-size: 12px; padding: 2px 8px; border-radius: 999px; flex: 0 0 auto; }
+    .lobby-players li .pbadge.player { background: rgba(34,197,94,0.15); color: #86efac; }
+    .lobby-players li .pbadge.viewer { background: rgba(148,163,184,0.15); color: #94a3b8; }
+    .lobby-players li .pbadge.host { background: rgba(245,158,11,0.15); color: #fde68a; }
+    #lobby-wait { font-size: 14px; color: #94a3b8; text-align: center; }
   </style>
 </head>
 <body>
   <div id="app">
 
-    <!-- ===== Screen 1: Setup ===== -->
-    <section id="setup-screen" class="screen active">
+    <!-- ===== Screen: Home (online create / join) ===== -->
+    <section id="home-screen" class="screen active">
+      <div class="setup-inner">
+        <h1>🌍 משחק מדינות העולם</h1>
+        <p class="subtitle">משחק מקוון — צרו משחק והזמינו חברים בקישור. עד 5 שחקנים.</p>
+        <input class="name-input" id="mp-name" type="text" placeholder="השם שלך" autocomplete="off" maxlength="20">
+
+        <div id="home-create">
+          <button class="btn" id="create-btn" disabled>צור משחק חדש</button>
+        </div>
+        <div id="home-join" class="hidden">
+          <div class="join-code-label">הצטרפות למשחק <b id="join-code-text"></b></div>
+          <button class="btn" id="join-btn" disabled>הצטרף למשחק</button>
+        </div>
+
+        <p id="home-error" class="mp-error hidden"></p>
+        <p class="mic-note">🎤 דורש מיקרופון ו‑Chrome, דרך HTTPS.</p>
+      </div>
+    </section>
+
+    <!-- ===== Screen: Lobby ===== -->
+    <section id="lobby-screen" class="screen">
+      <div class="lobby-inner">
+        <h1>חדר המתנה</h1>
+        <div class="lobby-code-box">
+          <div class="lobby-code-label">קוד המשחק</div>
+          <div class="lobby-code" id="lobby-code">----</div>
+        </div>
+        <button class="btn wa-btn" id="share-btn">📲 שתף ב‑WhatsApp</button>
+        <button class="btn ghost" id="copy-btn">🔗 העתק קישור</button>
+
+        <div class="lobby-players">
+          <h3>שחקנים (<span id="lobby-count">0</span>/5)</h3>
+          <ul id="lobby-list"></ul>
+        </div>
+
+        <div id="lobby-host-controls" class="hidden">
+          <button class="btn" id="lobby-start-btn">התחל משחק</button>
+        </div>
+        <div id="lobby-wait" class="hidden">⏳ ממתין שהמארח יתחיל את המשחק…</div>
+        <p id="lobby-status" class="mp-status"></p>
+      </div>
+    </section>
+
+    <!-- ===== Screen 1: Setup (legacy local mode, currently unused) ===== -->
+    <section id="setup-screen" class="screen">
       <div class="setup-inner">
         <h1>🌍 משחק מדינות העולם</h1>
         <p class="subtitle">שני שחקנים, בתורות, אומרים שמות של מדינות בקול. מי שיודע יותר — מנצח!</p>
@@ -1641,6 +1715,140 @@
       refreshStartBtn();
     }
     document.getElementById('newgame-btn').addEventListener('click', newGame);
+
+    // ===================== Online multiplayer (lobby) =====================
+    let mp = { code: null, playerId: null, token: null, role: null, isHost: false, state: null, pollTimer: null };
+
+    async function api(path, opts = {}) {
+      const res = await fetch(path, {
+        method: opts.method || 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        body: opts.body ? JSON.stringify(opts.body) : undefined,
+      });
+      const data = await res.json().catch(() => ({ ok: false, error: 'bad response' }));
+      if (!res.ok || !data.ok) throw new Error(data.error || ('HTTP ' + res.status));
+      return data;
+    }
+    function saveCreds(code, playerId, token) { try { localStorage.setItem('mp:' + code, JSON.stringify({ playerId, token })); localStorage.setItem('mp:last', code); } catch (e) {} }
+    function loadCreds(code) { try { return JSON.parse(localStorage.getItem('mp:' + code) || 'null'); } catch (e) { return null; } }
+
+    const mpName = document.getElementById('mp-name');
+    const createBtn = document.getElementById('create-btn');
+    const joinBtn = document.getElementById('join-btn');
+    const homeError = document.getElementById('home-error');
+    const joinCodeText = document.getElementById('join-code-text');
+    let pendingJoinCode = null;
+
+    function showHomeError(msg) { homeError.textContent = msg; homeError.classList.remove('hidden'); }
+    function clearHomeError() { homeError.classList.add('hidden'); homeError.textContent = ''; }
+    function refreshHomeButtons() { const ok = !!mpName.value.trim(); createBtn.disabled = !ok; joinBtn.disabled = !ok; }
+    mpName.addEventListener('input', refreshHomeButtons);
+
+    createBtn.addEventListener('click', async () => {
+      clearHomeError(); createBtn.disabled = true;
+      try {
+        const d = await api('/api/create', { method: 'POST', body: { name: mpName.value.trim() } });
+        mp = { code: d.code, playerId: d.playerId, token: d.token, role: 'player', isHost: true, state: d.state, pollTimer: null };
+        saveCreds(d.code, d.playerId, d.token);
+        enterLobby();
+      } catch (e) { showHomeError('שגיאה ביצירת משחק: ' + e.message); createBtn.disabled = false; }
+    });
+
+    joinBtn.addEventListener('click', async () => {
+      clearHomeError(); joinBtn.disabled = true;
+      try {
+        const code = pendingJoinCode;
+        const creds = loadCreds(code) || {};
+        const d = await api('/api/join', { method: 'POST', body: { code, name: mpName.value.trim(), playerId: creds.playerId, token: creds.token } });
+        mp = { code, playerId: d.playerId, token: d.token, role: d.role, isHost: (d.state.hostId === d.playerId), state: d.state, pollTimer: null };
+        saveCreds(code, d.playerId, d.token);
+        enterLobby();
+      } catch (e) { showHomeError('שגיאה בהצטרפות: ' + e.message); joinBtn.disabled = false; }
+    });
+
+    const lobbyCodeEl = document.getElementById('lobby-code');
+    const lobbyListEl = document.getElementById('lobby-list');
+    const lobbyCountEl = document.getElementById('lobby-count');
+    const lobbyHostControls = document.getElementById('lobby-host-controls');
+    const lobbyWait = document.getElementById('lobby-wait');
+    const lobbyStatus = document.getElementById('lobby-status');
+
+    function shareLink() { return location.origin + location.pathname + '?g=' + mp.code; }
+
+    function enterLobby() {
+      lobbyCodeEl.textContent = mp.code;
+      lobbyHostControls.classList.toggle('hidden', !mp.isHost);
+      lobbyWait.classList.toggle('hidden', mp.isHost);
+      renderLobby(mp.state);
+      showScreen('lobby-screen');
+      startPolling();
+    }
+
+    function renderLobby(state) {
+      if (!state) return;
+      mp.state = state;
+      const players = Object.values(state.players).sort((a, b) => a.joinedAt - b.joinedAt);
+      const active = players.filter(p => p.role === 'player');
+      lobbyCountEl.textContent = active.length;
+      lobbyListEl.innerHTML = '';
+      players.forEach(p => {
+        const li = document.createElement('li');
+        const dot = document.createElement('span'); dot.className = 'pdot';
+        const name = document.createElement('span'); name.className = 'pname';
+        name.textContent = p.name + (p.id === mp.playerId ? ' (את/ה)' : '');
+        const badge = document.createElement('span');
+        if (p.id === state.hostId) { badge.className = 'pbadge host'; badge.textContent = 'מארח'; }
+        else if (p.role === 'player') { badge.className = 'pbadge player'; badge.textContent = 'שחקן'; }
+        else { badge.className = 'pbadge viewer'; badge.textContent = 'צופה'; }
+        li.appendChild(dot); li.appendChild(name); li.appendChild(badge);
+        lobbyListEl.appendChild(li);
+      });
+    }
+
+    function startPolling() {
+      stopPolling();
+      mp.pollTimer = setInterval(async () => {
+        try { const d = await api('/api/state?code=' + encodeURIComponent(mp.code)); lobbyStatus.textContent = ''; renderLobby(d.state); }
+        catch (e) { lobbyStatus.textContent = 'בעיית חיבור… מנסה שוב'; }
+      }, 1500);
+    }
+    function stopPolling() { if (mp.pollTimer) { clearInterval(mp.pollTimer); mp.pollTimer = null; } }
+
+    document.getElementById('share-btn').addEventListener('click', () => {
+      const text = 'בוא/י לשחק מדינות! הצטרף/י למשחק שלי:\n' + shareLink();
+      window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank');
+    });
+    document.getElementById('copy-btn').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(shareLink()); lobbyStatus.textContent = 'הקישור הועתק ✓'; }
+      catch (e) { lobbyStatus.textContent = 'העתקה נכשלה — העתק ידנית: ' + shareLink(); }
+    });
+    document.getElementById('lobby-start-btn').addEventListener('click', () => {
+      lobbyStatus.textContent = 'בחירת צבעים והתחלת משחק יתווספו בשלב הבא 🙂';
+    });
+
+    (async function initMultiplayer() {
+      const g = (new URLSearchParams(location.search).get('g') || '').trim().toUpperCase();
+      if (g) {
+        pendingJoinCode = g;
+        joinCodeText.textContent = g;
+        document.getElementById('home-create').classList.add('hidden');
+        document.getElementById('home-join').classList.remove('hidden');
+      } else {
+        // Try to reconnect to the last game (survives a refresh).
+        const last = (() => { try { return localStorage.getItem('mp:last'); } catch (e) { return null; } })();
+        const creds = last ? loadCreds(last) : null;
+        if (last && creds) {
+          try {
+            const d = await api('/api/join', { method: 'POST', body: { code: last, name: 'שחקן', playerId: creds.playerId, token: creds.token } });
+            if (d.reconnected) {
+              mp = { code: last, playerId: d.playerId, token: d.token, role: d.role, isHost: (d.state.hostId === d.playerId), state: d.state, pollTimer: null };
+              enterLobby();
+            }
+          } catch (e) { /* game gone/expired — just show home */ }
+        }
+      }
+      refreshHomeButtons();
+    })();
   </script>
 </body>
 </html>
