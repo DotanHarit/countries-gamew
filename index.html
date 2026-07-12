@@ -492,6 +492,34 @@
     .swatch .check { color: #fff; font-size: 22px; font-weight: 900; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
 
     .mp-turn { font-size: 20px; font-weight: 800; text-align: center; }
+
+    /* ---------- Online gameplay ---------- */
+    #mp-play-screen { height: 100%; }
+    #mp-play-screen.active { display: flex; flex-direction: column; }
+    #mp-header { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 8px 10px;
+      background: var(--panel); border-bottom: 1px solid var(--border); overflow-x: auto; }
+    .mp-pchip { display: flex; align-items: center; gap: 6px; padding: 4px 9px; border-radius: 999px;
+      background: #0d1b2e; border: 1px solid var(--border); flex: 0 0 auto; }
+    .mp-pchip.turn { box-shadow: 0 0 0 2px currentColor; }
+    .mp-pchip .cdot { width: 12px; height: 12px; border-radius: 50%; }
+    .mp-pchip .pn { font-size: 13px; font-weight: 600; }
+    .mp-pchip .ps { font-size: 14px; font-weight: 800; }
+    #mp-remaining { margin-inline-start: auto; font-size: 12px; color: #94a3b8; flex: 0 0 auto; padding-inline: 6px; white-space: nowrap; }
+    #mp-map { flex: 1 1 auto; position: relative; background: var(--ocean); overflow: hidden; min-height: 0; touch-action: none; }
+    #mp-map svg { display: block; width: 100%; height: 100%; touch-action: none; }
+    #mp-panel { flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
+      background: var(--panel); border-top: 1px solid var(--border); }
+    #mp-banner { font-size: 15px; font-weight: 700; text-align: center; min-height: 20px; }
+    #mp-input-row { display: flex; gap: 8px; align-items: center; }
+    #mp-word { flex: 1 1 auto; min-width: 0; padding: 10px 12px; font-size: 16px; border-radius: 10px;
+      border: 2px solid var(--border); background: #0d1b2e; color: #e2e8f0; text-align: center; outline: none; }
+    #mp-mic { flex: 0 0 auto; width: 48px; height: 48px; border-radius: 50%; border: none; background: var(--country); color: #fff; font-size: 22px; cursor: pointer; }
+    #mp-mic.on { box-shadow: 0 0 0 3px rgba(255,255,255,.4); }
+    #mp-send { flex: 0 0 auto; padding: 10px 14px; font-weight: 700; border: none; border-radius: 10px; background: var(--p1); color: #052e16; cursor: pointer; }
+    #mp-send:disabled { background: var(--inactive); color: #64748b; cursor: not-allowed; }
+    #mp-skip { flex: 0 0 auto; padding: 10px 12px; font-weight: 700; border: 1px solid var(--border); border-radius: 10px; background: var(--country); color: #cbd5e1; cursor: pointer; }
+    #mp-feedback { font-size: 14px; text-align: center; min-height: 18px; color: #cbd5e1; }
+
     #mp-countdown {
       position: fixed; inset: 0; z-index: 50;
       display: flex; align-items: center; justify-content: center;
@@ -560,16 +588,19 @@
       </div>
     </section>
 
-    <!-- ===== Screen: Online play (placeholder until Step 5) ===== -->
+    <!-- ===== Screen: Online play ===== -->
     <section id="mp-play-screen" class="screen">
-      <div class="lobby-inner">
-        <h1>המשחק התחיל! 🌍</h1>
-        <div id="mp-turn" class="mp-turn"></div>
-        <div class="lobby-players">
-          <h3>שחקנים</h3>
-          <ul id="mp-play-list"></ul>
+      <div id="mp-header"></div>
+      <div id="mp-map"></div>
+      <div id="mp-panel">
+        <div id="mp-banner"></div>
+        <div id="mp-input-row" class="hidden">
+          <button id="mp-mic" aria-label="מיקרופון">🎤</button>
+          <input id="mp-word" type="text" autocomplete="off" placeholder="אמור/י או הקלד/י מדינה">
+          <button id="mp-send" disabled>שלח ✓</button>
+          <button id="mp-skip">דלג ⏭</button>
         </div>
-        <p class="mp-status">המפה והמשחק המלא יתווספו בשלב הבא</p>
+        <div id="mp-feedback"></div>
       </div>
     </section>
 
@@ -1850,7 +1881,7 @@
       if (state.status === 'lobby') {
         if (document.querySelector('.screen.active').id !== 'lobby-screen') showScreen('lobby-screen');
         renderLobby(state);
-      } else if (state.status === 'playing') {
+      } else if (state.status === 'playing' || state.status === 'ended') {
         handlePlaying(state);
       }
     }
@@ -1858,7 +1889,7 @@
     function handlePlaying(state) {
       const overlay = document.getElementById('mp-countdown');
       if (document.querySelector('.screen.active').id !== 'mp-play-screen') showPlay(state);
-      else renderPlay(state);
+      else mpRenderAll(state);
       if (state.startedAt && serverNow() < state.startedAt) {
         overlay.classList.remove('hidden');
         startCountdownTicker(state.startedAt);
@@ -1882,28 +1913,134 @@
       mp.cdTimer = setInterval(tick, 150);
     }
 
-    function showPlay(state) { showScreen('mp-play-screen'); renderPlay(state); }
-    function renderPlay(state) {
-      const order = state.order || [];
-      const turnId = order[state.turn || 0];
-      const turnP = turnId ? state.players[turnId] : null;
-      const turnEl = document.getElementById('mp-turn');
-      turnEl.textContent = turnP ? ('תור: ' + turnP.name + (turnId === mp.playerId ? ' (את/ה)' : '')) : '';
-      turnEl.style.color = turnP ? colorHex(turnP.color) : '';
-      const list = document.getElementById('mp-play-list');
-      list.innerHTML = '';
-      Object.values(state.players).sort((a, b) => a.joinedAt - b.joinedAt).forEach(p => {
-        const li = document.createElement('li');
-        const dot = document.createElement('span'); dot.className = 'pdot'; dot.style.background = colorHex(p.color);
-        const name = document.createElement('span'); name.className = 'pname';
-        name.textContent = p.name + (p.id === mp.playerId ? ' (את/ה)' : '');
-        const badge = document.createElement('span');
-        if (p.role === 'player') { badge.className = 'pbadge player'; badge.textContent = 'שחקן'; }
-        else { badge.className = 'pbadge viewer'; badge.textContent = 'צופה'; }
-        li.append(dot, name, badge);
-        list.appendChild(li);
+    // ---------- Online gameplay: map + turns + claiming ----------
+    let mpMapDrawn = false;
+
+    function showPlay(state) {
+      showScreen('mp-play-screen');
+      if (!mpMapDrawn) requestAnimationFrame(() => requestAnimationFrame(mpDrawMap));
+      mpRenderAll(state);
+    }
+
+    function mpDrawMap() {
+      const wrap = document.getElementById('mp-map');
+      if (!wrap) return;
+      if (typeof geoData === 'undefined' || !geoData) { setTimeout(mpDrawMap, 120); return; }
+      const w = wrap.clientWidth, h = wrap.clientHeight;
+      if (!w || !h) { setTimeout(mpDrawMap, 80); return; }
+      wrap.innerHTML = '';
+      const projection = d3.geoNaturalEarth1().scale(w / 6.3).translate([w / 2, h / 2]);
+      const path = d3.geoPath().projection(projection);
+      const svg = d3.select(wrap).append('svg').attr('width', w).attr('height', h).attr('viewBox', `0 0 ${w} ${h}`);
+      const g = svg.append('g'); g.node().style.willChange = 'transform';
+      g.selectAll('path').data(geoData.features).enter().append('path')
+        .attr('d', path).attr('data-mp', d => d.properties.name)
+        .attr('fill', MAP_DEFAULT_FILL).attr('stroke', '#0a1628').attr('stroke-width', 0.5);
+      const zoom = d3.zoom().scaleExtent([1, 12]).translateExtent([[0, 0], [w, h]]).on('zoom', e => g.attr('transform', e.transform));
+      svg.call(zoom);
+      mpMapDrawn = true;
+      mpApplyClaims(mp.state);
+    }
+    function mpApplyClaims(state) {
+      if (!mpMapDrawn || !state) return;
+      const claims = state.claims || {};
+      document.querySelectorAll('#mp-map [data-mp]').forEach(el => {
+        const info = claims[el.getAttribute('data-mp')];
+        el.setAttribute('fill', info ? colorHex(info.color) : MAP_DEFAULT_FILL);
       });
     }
+    function mpRenderAll(state) { mp.state = state; mpRenderHeader(state); mpApplyClaims(state); mpRenderTurn(state); }
+
+    function mpRenderHeader(state) {
+      const head = document.getElementById('mp-header'); head.innerHTML = '';
+      const claims = state.claims || {};
+      const scores = {}; for (const c of Object.values(claims)) scores[c.by] = (scores[c.by] || 0) + 1;
+      const order = state.order || []; const curId = order[state.turn || 0];
+      Object.values(state.players).filter(p => p.role === 'player').sort((a, b) => a.joinedAt - b.joinedAt).forEach(p => {
+        const chip = document.createElement('div'); chip.className = 'mp-pchip' + (p.id === curId ? ' turn' : '');
+        chip.style.color = colorHex(p.color);
+        const dot = document.createElement('span'); dot.className = 'cdot'; dot.style.background = colorHex(p.color);
+        const pn = document.createElement('span'); pn.className = 'pn'; pn.style.color = '#e2e8f0';
+        pn.textContent = p.name + (p.id === mp.playerId ? ' (את/ה)' : '');
+        const ps = document.createElement('span'); ps.className = 'ps'; ps.style.color = colorHex(p.color);
+        ps.textContent = scores[p.id] || 0;
+        chip.append(dot, pn, ps); head.appendChild(chip);
+      });
+      const rem = document.createElement('div'); rem.id = 'mp-remaining';
+      const total = (typeof OFFICIAL !== 'undefined' && OFFICIAL.size) ? OFFICIAL.size : 200;
+      rem.textContent = 'נותרו ' + (total - Object.keys(claims).length);
+      head.appendChild(rem);
+    }
+
+    function mpRenderTurn(state) {
+      const banner = document.getElementById('mp-banner');
+      const row = document.getElementById('mp-input-row');
+      const me = state.players[mp.playerId];
+      if (state.status === 'ended') { banner.textContent = '🏁 המשחק הסתיים'; banner.style.color = '#e2e8f0'; row.classList.add('hidden'); return; }
+      const order = state.order || []; const curId = order[state.turn || 0];
+      const inCountdown = state.startedAt && serverNow() < state.startedAt;
+      if (!me || me.role === 'viewer') { banner.textContent = '👀 את/ה צופה'; banner.style.color = '#94a3b8'; row.classList.add('hidden'); return; }
+      if (inCountdown) { banner.textContent = 'מתכוננים…'; row.classList.add('hidden'); return; }
+      if (curId === mp.playerId) {
+        banner.textContent = '🎤 תורך! אמור/י או הקלד/י מדינה'; banner.style.color = colorHex(me.color);
+        row.classList.remove('hidden');
+      } else {
+        const cp = state.players[curId];
+        banner.textContent = 'תור של ' + (cp ? cp.name : ''); banner.style.color = cp ? colorHex(cp.color) : '';
+        row.classList.add('hidden');
+      }
+    }
+
+    function mpTranslateErr(m) {
+      if (/not your turn/.test(m)) return 'לא תורך';
+      if (/already claimed/.test(m)) return 'המדינה כבר נתפסה';
+      if (/not started/.test(m)) return 'המשחק עוד לא התחיל';
+      return m;
+    }
+    function setMpSend(on) { document.getElementById('mp-send').disabled = !on; }
+
+    async function mpSubmit() {
+      const inp = document.getElementById('mp-word');
+      const fb = document.getElementById('mp-feedback');
+      const text = inp.value.trim(); if (!text) return;
+      const eng = findCountry(text);
+      if (!eng) { fb.textContent = '"' + text + '" — לא זיהיתי מדינה, נסה/י שוב'; return; }
+      setMpSend(false);
+      try {
+        const d = await api('/api/claim', { method: 'POST', body: { code: mp.code, playerId: mp.playerId, token: mp.token, country: eng } });
+        inp.value = ''; fb.textContent = '✅ ' + text; applyState(d.state);
+      } catch (e) { fb.textContent = mpTranslateErr(e.message); }
+    }
+    async function mpSkip() {
+      try { const d = await api('/api/skip', { method: 'POST', body: { code: mp.code, playerId: mp.playerId, token: mp.token } }); document.getElementById('mp-feedback').textContent = 'דילגת'; applyState(d.state); }
+      catch (e) { document.getElementById('mp-feedback').textContent = mpTranslateErr(e.message); }
+    }
+
+    document.getElementById('mp-word').addEventListener('input', () => setMpSend(!!document.getElementById('mp-word').value.trim()));
+    document.getElementById('mp-word').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); mpSubmit(); } });
+    document.getElementById('mp-send').addEventListener('click', mpSubmit);
+    document.getElementById('mp-skip').addEventListener('click', mpSkip);
+
+    // Voice: fills the box (player confirms); reuses findCountry.
+    let mpRec = null, mpListening = false;
+    function mpMicUI() { document.getElementById('mp-mic').classList.toggle('on', mpListening); }
+    function mpSetupRec() {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) return;
+      mpRec = new SR(); mpRec.lang = 'he-IL'; mpRec.continuous = true; mpRec.interimResults = true; mpRec.maxAlternatives = 5;
+      mpRec.onresult = (e) => {
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const r = e.results[i];
+          if (r.isFinal) { const t = (r[0].transcript || '').trim(); if (t) { document.getElementById('mp-word').value = t; setMpSend(true); } mpStopListen(); return; }
+          document.getElementById('mp-word').value = (r[0].transcript || '').trim();
+        }
+      };
+      mpRec.onend = () => { mpListening = false; mpMicUI(); };
+      mpRec.onerror = () => {};
+    }
+    function mpStartListen() { if (!mpRec) mpSetupRec(); if (!mpRec) return; try { mpRec.start(); mpListening = true; mpMicUI(); } catch (e) {} }
+    function mpStopListen() { if (mpRec) { try { mpRec.stop(); } catch (e) {} } mpListening = false; mpMicUI(); }
+    document.getElementById('mp-mic').addEventListener('click', () => { if (mpListening) mpStopListen(); else mpStartListen(); });
 
     function renderLobby(state) {
       if (!state) return;
