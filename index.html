@@ -476,6 +476,20 @@
     .lobby-players li .pbadge.viewer { background: rgba(148,163,184,0.15); color: #94a3b8; }
     .lobby-players li .pbadge.host { background: rgba(245,158,11,0.15); color: #fde68a; }
     #lobby-wait { font-size: 14px; color: #94a3b8; text-align: center; }
+
+    #lobby-colors { width: 100%; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
+    #lobby-colors h3 { font-size: 15px; margin-bottom: 10px; text-align: center; color: #cbd5e1; }
+    .color-swatches { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .swatch {
+      position: relative; width: 52px; height: 52px; border-radius: 50%;
+      border: 3px solid transparent; cursor: pointer; transition: transform .1s;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .swatch:active { transform: scale(0.95); }
+    .swatch.mine { border-color: #fff; box-shadow: 0 0 0 3px rgba(255,255,255,.25); }
+    .swatch.taken { cursor: not-allowed; opacity: 0.4; }
+    .swatch .taken-name { position: absolute; bottom: -18px; font-size: 10px; color: #94a3b8; white-space: nowrap; }
+    .swatch .check { color: #fff; font-size: 22px; font-weight: 900; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
   </style>
 </head>
 <body>
@@ -512,13 +526,18 @@
         <button class="btn wa-btn" id="share-btn">📲 שתף ב‑WhatsApp</button>
         <button class="btn ghost" id="copy-btn">🔗 העתק קישור</button>
 
+        <div id="lobby-colors" class="hidden">
+          <h3>בחר/י צבע</h3>
+          <div class="color-swatches" id="color-swatches"></div>
+        </div>
+
         <div class="lobby-players">
           <h3>שחקנים (<span id="lobby-count">0</span>/5)</h3>
           <ul id="lobby-list"></ul>
         </div>
 
         <div id="lobby-host-controls" class="hidden">
-          <button class="btn" id="lobby-start-btn">התחל משחק</button>
+          <button class="btn" id="lobby-start-btn" disabled>התחל משחק</button>
         </div>
         <div id="lobby-wait" class="hidden">⏳ ממתין שהמארח יתחיל את המשחק…</div>
         <p id="lobby-status" class="mp-status"></p>
@@ -1718,6 +1737,14 @@
 
     // ===================== Online multiplayer (lobby) =====================
     let mp = { code: null, playerId: null, token: null, role: null, isHost: false, state: null, pollTimer: null };
+    const MP_COLORS = [
+      { name: 'ירוק', hex: '#22c55e' },
+      { name: 'כתום', hex: '#f97316' },
+      { name: 'כחול', hex: '#3b82f6' },
+      { name: 'סגול', hex: '#a855f7' },
+      { name: 'צהוב', hex: '#eab308' },
+    ];
+    const colorHex = (i) => (i == null || i < 0) ? '#334155' : MP_COLORS[i].hex;
 
     async function api(path, opts = {}) {
       const res = await fetch(path, {
@@ -1794,6 +1821,7 @@
       players.forEach(p => {
         const li = document.createElement('li');
         const dot = document.createElement('span'); dot.className = 'pdot';
+        dot.style.background = colorHex(p.color);
         const name = document.createElement('span'); name.className = 'pname';
         name.textContent = p.name + (p.id === mp.playerId ? ' (את/ה)' : '');
         const badge = document.createElement('span');
@@ -1803,6 +1831,51 @@
         li.appendChild(dot); li.appendChild(name); li.appendChild(badge);
         lobbyListEl.appendChild(li);
       });
+      renderColorPicker(state);
+      updateStartGate(state, active);
+    }
+
+    function renderColorPicker(state) {
+      const wrap = document.getElementById('lobby-colors');
+      const me = state.players[mp.playerId];
+      const iAmPlayer = me && me.role === 'player';
+      wrap.classList.toggle('hidden', !iAmPlayer);
+      if (!iAmPlayer) return;
+      const box = document.getElementById('color-swatches');
+      box.innerHTML = '';
+      MP_COLORS.forEach((c, i) => {
+        const owner = Object.values(state.players).find(p => p.color === i);
+        const mine = owner && owner.id === mp.playerId;
+        const takenByOther = owner && owner.id !== mp.playerId;
+        const sw = document.createElement('div');
+        sw.className = 'swatch' + (mine ? ' mine' : '') + (takenByOther ? ' taken' : '');
+        sw.style.background = c.hex;
+        if (mine) sw.innerHTML = '<span class="check">✓</span>';
+        if (takenByOther) {
+          const label = document.createElement('span');
+          label.className = 'taken-name'; label.textContent = owner.name;
+          sw.appendChild(label);
+        }
+        if (!takenByOther) sw.addEventListener('click', () => pickColor(i));
+        box.appendChild(sw);
+      });
+    }
+
+    function updateStartGate(state, active) {
+      if (!mp.isHost) return;
+      const startBtn = document.getElementById('lobby-start-btn');
+      const allPicked = active.length >= 2 && active.every(p => p.color != null);
+      startBtn.disabled = !allPicked;
+      if (active.length < 2) lobbyStatus.textContent = 'צריך לפחות 2 שחקנים כדי להתחיל';
+      else if (!allPicked) lobbyStatus.textContent = 'ממתין שכל השחקנים יבחרו צבע…';
+      else lobbyStatus.textContent = 'הכול מוכן — אפשר להתחיל!';
+    }
+
+    async function pickColor(i) {
+      try {
+        const d = await api('/api/color', { method: 'POST', body: { code: mp.code, playerId: mp.playerId, token: mp.token, color: i } });
+        renderLobby(d.state);   // optimistic immediate update
+      } catch (e) { lobbyStatus.textContent = 'בחירת צבע נכשלה: ' + e.message; }
     }
 
     function startPolling() {
