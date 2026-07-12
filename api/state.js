@@ -9,7 +9,7 @@ export default async function handler(req, res) {
     if (!state) return res.status(404).json({ ok: false, error: 'game not found' });
     // Discourage caching of the polled state.
     res.setHeader('Cache-Control', 'no-store');
-    return res.status(200).json({ ok: true, state: publicState(state) });
+    return res.status(200).json({ ok: true, state: publicState(state), serverTime: Date.now() });
   } catch (e) {
     return res.status(500).json({ ok: false, error: String((e && e.message) || e) });
   }

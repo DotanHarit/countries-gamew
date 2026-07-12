@@ -490,6 +490,22 @@
     .swatch.taken { cursor: not-allowed; opacity: 0.4; }
     .swatch .taken-name { position: absolute; bottom: -18px; font-size: 10px; color: #94a3b8; white-space: nowrap; }
     .swatch .check { color: #fff; font-size: 22px; font-weight: 900; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+
+    .mp-turn { font-size: 20px; font-weight: 800; text-align: center; }
+    #mp-countdown {
+      position: fixed; inset: 0; z-index: 50;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(13, 27, 46, 0.92);
+    }
+    #mp-countdown-num {
+      font-size: 120px; font-weight: 900; color: #fff;
+      animation: cdpop .9s ease-out infinite;
+    }
+    @keyframes cdpop {
+      0% { transform: scale(0.6); opacity: 0.3; }
+      40% { transform: scale(1); opacity: 1; }
+      100% { transform: scale(1.15); opacity: 0.15; }
+    }
   </style>
 </head>
 <body>
@@ -543,6 +559,22 @@
         <p id="lobby-status" class="mp-status"></p>
       </div>
     </section>
+
+    <!-- ===== Screen: Online play (placeholder until Step 5) ===== -->
+    <section id="mp-play-screen" class="screen">
+      <div class="lobby-inner">
+        <h1>המשחק התחיל! 🌍</h1>
+        <div id="mp-turn" class="mp-turn"></div>
+        <div class="lobby-players">
+          <h3>שחקנים</h3>
+          <ul id="mp-play-list"></ul>
+        </div>
+        <p class="mp-status">המפה והמשחק המלא יתווספו בשלב הבא</p>
+      </div>
+    </section>
+
+    <!-- Synced 3-2-1 countdown overlay -->
+    <div id="mp-countdown" class="hidden"><div id="mp-countdown-num">3</div></div>
 
     <!-- ===== Screen 1: Setup (legacy local mode, currently unused) ===== -->
     <section id="setup-screen" class="screen">
@@ -1746,6 +1778,8 @@
     ];
     const colorHex = (i) => (i == null || i < 0) ? '#334155' : MP_COLORS[i].hex;
 
+    let clockOffset = 0;                          // serverTime - clientTime
+    const serverNow = () => Date.now() + clockOffset;
     async function api(path, opts = {}) {
       const res = await fetch(path, {
         method: opts.method || 'GET',
@@ -1753,6 +1787,7 @@
         body: opts.body ? JSON.stringify(opts.body) : undefined,
       });
       const data = await res.json().catch(() => ({ ok: false, error: 'bad response' }));
+      if (typeof data.serverTime === 'number') clockOffset = data.serverTime - Date.now();
       if (!res.ok || !data.ok) throw new Error(data.error || ('HTTP ' + res.status));
       return data;
     }
@@ -1777,7 +1812,7 @@
         const d = await api('/api/create', { method: 'POST', body: { name: mpName.value.trim() } });
         mp = { code: d.code, playerId: d.playerId, token: d.token, role: 'player', isHost: true, state: d.state, pollTimer: null };
         saveCreds(d.code, d.playerId, d.token);
-        enterLobby();
+        enterSession();
       } catch (e) { showHomeError('שגיאה ביצירת משחק: ' + e.message); createBtn.disabled = false; }
     });
 
@@ -1789,7 +1824,7 @@
         const d = await api('/api/join', { method: 'POST', body: { code, name: mpName.value.trim(), playerId: creds.playerId, token: creds.token } });
         mp = { code, playerId: d.playerId, token: d.token, role: d.role, isHost: (d.state.hostId === d.playerId), state: d.state, pollTimer: null };
         saveCreds(code, d.playerId, d.token);
-        enterLobby();
+        enterSession();
       } catch (e) { showHomeError('שגיאה בהצטרפות: ' + e.message); joinBtn.disabled = false; }
     });
 
@@ -1802,18 +1837,79 @@
 
     function shareLink() { return location.origin + location.pathname + '?g=' + mp.code; }
 
-    function enterLobby() {
+    function enterSession() {
       lobbyCodeEl.textContent = mp.code;
-      lobbyHostControls.classList.toggle('hidden', !mp.isHost);
-      lobbyWait.classList.toggle('hidden', mp.isHost);
-      renderLobby(mp.state);
-      showScreen('lobby-screen');
+      applyState(mp.state);
       startPolling();
+    }
+
+    // Route the UI based on the game's status (lobby / playing).
+    function applyState(state) {
+      if (!state) return;
+      mp.state = state;
+      if (state.status === 'lobby') {
+        if (document.querySelector('.screen.active').id !== 'lobby-screen') showScreen('lobby-screen');
+        renderLobby(state);
+      } else if (state.status === 'playing') {
+        handlePlaying(state);
+      }
+    }
+
+    function handlePlaying(state) {
+      const overlay = document.getElementById('mp-countdown');
+      if (document.querySelector('.screen.active').id !== 'mp-play-screen') showPlay(state);
+      else renderPlay(state);
+      if (state.startedAt && serverNow() < state.startedAt) {
+        overlay.classList.remove('hidden');
+        startCountdownTicker(state.startedAt);
+      } else {
+        overlay.classList.add('hidden');
+      }
+    }
+
+    function startCountdownTicker(startedAt) {
+      if (mp.cdTimer) return;
+      const tick = () => {
+        const rem = Math.ceil((startedAt - serverNow()) / 1000);
+        const el = document.getElementById('mp-countdown-num');
+        el.textContent = rem > 0 ? rem : 'צא!';
+        if (rem <= 0) {
+          clearInterval(mp.cdTimer); mp.cdTimer = null;
+          setTimeout(() => document.getElementById('mp-countdown').classList.add('hidden'), 500);
+        }
+      };
+      tick();
+      mp.cdTimer = setInterval(tick, 150);
+    }
+
+    function showPlay(state) { showScreen('mp-play-screen'); renderPlay(state); }
+    function renderPlay(state) {
+      const order = state.order || [];
+      const turnId = order[state.turn || 0];
+      const turnP = turnId ? state.players[turnId] : null;
+      const turnEl = document.getElementById('mp-turn');
+      turnEl.textContent = turnP ? ('תור: ' + turnP.name + (turnId === mp.playerId ? ' (את/ה)' : '')) : '';
+      turnEl.style.color = turnP ? colorHex(turnP.color) : '';
+      const list = document.getElementById('mp-play-list');
+      list.innerHTML = '';
+      Object.values(state.players).sort((a, b) => a.joinedAt - b.joinedAt).forEach(p => {
+        const li = document.createElement('li');
+        const dot = document.createElement('span'); dot.className = 'pdot'; dot.style.background = colorHex(p.color);
+        const name = document.createElement('span'); name.className = 'pname';
+        name.textContent = p.name + (p.id === mp.playerId ? ' (את/ה)' : '');
+        const badge = document.createElement('span');
+        if (p.role === 'player') { badge.className = 'pbadge player'; badge.textContent = 'שחקן'; }
+        else { badge.className = 'pbadge viewer'; badge.textContent = 'צופה'; }
+        li.append(dot, name, badge);
+        list.appendChild(li);
+      });
     }
 
     function renderLobby(state) {
       if (!state) return;
       mp.state = state;
+      lobbyHostControls.classList.toggle('hidden', !mp.isHost);
+      lobbyWait.classList.toggle('hidden', mp.isHost);
       const players = Object.values(state.players).sort((a, b) => a.joinedAt - b.joinedAt);
       const active = players.filter(p => p.role === 'player');
       lobbyCountEl.textContent = active.length;
@@ -1881,7 +1977,7 @@
     function startPolling() {
       stopPolling();
       mp.pollTimer = setInterval(async () => {
-        try { const d = await api('/api/state?code=' + encodeURIComponent(mp.code)); lobbyStatus.textContent = ''; renderLobby(d.state); }
+        try { const d = await api('/api/state?code=' + encodeURIComponent(mp.code)); lobbyStatus.textContent = ''; applyState(d.state); }
         catch (e) { lobbyStatus.textContent = 'בעיית חיבור… מנסה שוב'; }
       }, 1500);
     }
@@ -1895,8 +1991,13 @@
       try { await navigator.clipboard.writeText(shareLink()); lobbyStatus.textContent = 'הקישור הועתק ✓'; }
       catch (e) { lobbyStatus.textContent = 'העתקה נכשלה — העתק ידנית: ' + shareLink(); }
     });
-    document.getElementById('lobby-start-btn').addEventListener('click', () => {
-      lobbyStatus.textContent = 'בחירת צבעים והתחלת משחק יתווספו בשלב הבא 🙂';
+    document.getElementById('lobby-start-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('lobby-start-btn');
+      btn.disabled = true;
+      try {
+        const d = await api('/api/start', { method: 'POST', body: { code: mp.code, playerId: mp.playerId, token: mp.token } });
+        applyState(d.state);
+      } catch (e) { lobbyStatus.textContent = 'התחלה נכשלה: ' + e.message; btn.disabled = false; }
     });
 
     (async function initMultiplayer() {
@@ -1915,7 +2016,7 @@
             const d = await api('/api/join', { method: 'POST', body: { code: last, name: 'שחקן', playerId: creds.playerId, token: creds.token } });
             if (d.reconnected) {
               mp = { code: last, playerId: d.playerId, token: d.token, role: d.role, isHost: (d.state.hostId === d.playerId), state: d.state, pollTimer: null };
-              enterLobby();
+              enterSession();
             }
           } catch (e) { /* game gone/expired — just show home */ }
         }
