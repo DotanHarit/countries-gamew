@@ -519,8 +519,9 @@
     #mp-send:disabled { background: var(--inactive); color: #64748b; cursor: not-allowed; }
     #mp-skip { flex: 0 0 auto; padding: 10px 12px; font-weight: 700; border: 1px solid var(--border); border-radius: 10px; background: var(--country); color: #cbd5e1; cursor: pointer; }
     #mp-feedback { font-size: 14px; text-align: center; min-height: 18px; color: #cbd5e1; }
-    #mp-host-row { display: flex; justify-content: center; }
+    #mp-controls-row { display: flex; justify-content: center; gap: 10px; }
     #mp-end-btn { padding: 8px 14px; font-size: 13px; font-weight: 700; border: 1px solid #a16207; border-radius: 10px; background: #3b2f0a; color: #fde68a; cursor: pointer; }
+    #mp-leave-btn { padding: 8px 14px; font-size: 13px; font-weight: 700; border: 1px solid var(--border); border-radius: 10px; background: transparent; color: #94a3b8; cursor: pointer; }
 
     #mp-end-screen { align-items: center; justify-content: flex-start; padding: 24px 16px; overflow-y: auto; }
     #mpe-banner { font-size: 26px; font-weight: 800; text-align: center; line-height: 1.4; }
@@ -604,6 +605,7 @@
         </div>
         <div id="lobby-wait" class="hidden">⏳ ממתין שהמארח יתחיל את המשחק…</div>
         <p id="lobby-status" class="mp-status"></p>
+        <button class="btn ghost" id="lobby-leave-btn">צא מהמשחק</button>
       </div>
     </section>
 
@@ -620,7 +622,10 @@
           <button id="mp-skip">דלג ⏭</button>
         </div>
         <div id="mp-feedback"></div>
-        <div id="mp-host-row" class="hidden"><button id="mp-end-btn">סיום משחק (מארח)</button></div>
+        <div id="mp-controls-row">
+          <button id="mp-end-btn" class="hidden">סיום משחק (מארח)</button>
+          <button id="mp-leave-btn">צא מהמשחק</button>
+        </div>
       </div>
     </section>
 
@@ -1984,7 +1989,7 @@
     function mpRenderAll(state) {
       mp.state = state;
       mpRenderHeader(state); mpApplyClaims(state); mpRenderTurn(state);
-      document.getElementById('mp-host-row').classList.toggle('hidden', !(mp.isHost && state.status === 'playing'));
+      document.getElementById('mp-end-btn').classList.toggle('hidden', !(mp.isHost && state.status === 'playing'));
     }
 
     // ---------- Online results ----------
@@ -2035,8 +2040,26 @@
       catch (e) { document.getElementById('mp-feedback').textContent = e.message; }
     });
     document.getElementById('mpe-home').addEventListener('click', () => {
+      stopPolling(); leavingGame = true; try { localStorage.removeItem('mp:last'); } catch (e) {}
+      location.href = location.origin + location.pathname;
+    });
+
+    async function leaveGame() {
+      leavingGame = true;
+      try { if (mp.code) await api('/api/leave', { method: 'POST', body: { code: mp.code, playerId: mp.playerId, token: mp.token } }); } catch (e) {}
       stopPolling(); try { localStorage.removeItem('mp:last'); } catch (e) {}
       location.href = location.origin + location.pathname;
+    }
+    document.getElementById('lobby-leave-btn').addEventListener('click', () => { if (confirm('לצאת מהמשחק?')) leaveGame(); });
+    document.getElementById('mp-leave-btn').addEventListener('click', () => { if (confirm('לצאת מהמשחק?')) leaveGame(); });
+
+    // Warn before an accidental refresh/close while actively playing online.
+    function mpActive() {
+      const me = mp.state && mp.state.players && mp.state.players[mp.playerId];
+      return !!(mp.code && me && me.role === 'player' && mp.state.status === 'playing');
+    }
+    window.addEventListener('beforeunload', (e) => {
+      if (mpActive() && !leavingGame) { e.preventDefault(); e.returnValue = ''; }
     });
 
     function mpRenderHeader(state) {
@@ -2054,9 +2077,10 @@
         ps.textContent = scores[p.id] || 0;
         chip.append(dot, pn, ps); head.appendChild(chip);
       });
+      const viewers = Object.values(state.players).filter(p => p.role === 'viewer').length;
       const rem = document.createElement('div'); rem.id = 'mp-remaining';
       const total = (typeof OFFICIAL !== 'undefined' && OFFICIAL.size) ? OFFICIAL.size : 200;
-      rem.textContent = 'נותרו ' + (total - Object.keys(claims).length);
+      rem.textContent = 'נותרו ' + (total - Object.keys(claims).length) + (viewers ? ' · 👀 ' + viewers : '');
       head.appendChild(rem);
     }
 
