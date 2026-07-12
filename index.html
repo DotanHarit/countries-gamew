@@ -519,6 +519,25 @@
     #mp-send:disabled { background: var(--inactive); color: #64748b; cursor: not-allowed; }
     #mp-skip { flex: 0 0 auto; padding: 10px 12px; font-weight: 700; border: 1px solid var(--border); border-radius: 10px; background: var(--country); color: #cbd5e1; cursor: pointer; }
     #mp-feedback { font-size: 14px; text-align: center; min-height: 18px; color: #cbd5e1; }
+    #mp-host-row { display: flex; justify-content: center; }
+    #mp-end-btn { padding: 8px 14px; font-size: 13px; font-weight: 700; border: 1px solid #a16207; border-radius: 10px; background: #3b2f0a; color: #fde68a; cursor: pointer; }
+
+    #mp-end-screen { align-items: center; justify-content: flex-start; padding: 24px 16px; overflow-y: auto; }
+    #mpe-banner { font-size: 26px; font-weight: 800; text-align: center; line-height: 1.4; }
+    #mpe-ranking { width: 100%; display: flex; flex-direction: column; gap: 10px; }
+    .mpe-card { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 12px;
+      background: var(--panel); border: 2px solid var(--border); }
+    .mpe-card .rank { font-size: 18px; font-weight: 900; width: 26px; text-align: center; color: #94a3b8; }
+    .mpe-card .cdot { width: 18px; height: 18px; border-radius: 50%; flex: 0 0 auto; }
+    .mpe-card .nm { flex: 1 1 auto; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mpe-card .sc { font-size: 22px; font-weight: 900; }
+    .mpe-card .ar { font-size: 12px; color: #94a3b8; white-space: nowrap; }
+    #mpe-lists { width: 100%; display: flex; flex-direction: column; gap: 10px; }
+    .mpe-listcard { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
+    .mpe-listcard h4 { font-size: 14px; margin-bottom: 8px; }
+    .mpe-listcard .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .mpe-listcard .chip { font-size: 13px; color: #cbd5e1; background: #0d1b2e; border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; }
+    .mpe-listcard .empty { color: #64748b; font-size: 13px; }
 
     #mp-countdown {
       position: fixed; inset: 0; z-index: 50;
@@ -601,6 +620,17 @@
           <button id="mp-skip">דלג ⏭</button>
         </div>
         <div id="mp-feedback"></div>
+        <div id="mp-host-row" class="hidden"><button id="mp-end-btn">סיום משחק (מארח)</button></div>
+      </div>
+    </section>
+
+    <!-- ===== Screen: Online results ===== -->
+    <section id="mp-end-screen" class="screen">
+      <div class="end-inner">
+        <div id="mpe-banner"></div>
+        <div id="mpe-ranking"></div>
+        <div id="mpe-lists"></div>
+        <button class="btn" id="mpe-home">חזרה למסך הבית</button>
       </div>
     </section>
 
@@ -1881,8 +1911,10 @@
       if (state.status === 'lobby') {
         if (document.querySelector('.screen.active').id !== 'lobby-screen') showScreen('lobby-screen');
         renderLobby(state);
-      } else if (state.status === 'playing' || state.status === 'ended') {
+      } else if (state.status === 'playing') {
         handlePlaying(state);
+      } else if (state.status === 'ended') {
+        showMpEnd(state);
       }
     }
 
@@ -1949,7 +1981,63 @@
         el.setAttribute('fill', info ? colorHex(info.color) : MAP_DEFAULT_FILL);
       });
     }
-    function mpRenderAll(state) { mp.state = state; mpRenderHeader(state); mpApplyClaims(state); mpRenderTurn(state); }
+    function mpRenderAll(state) {
+      mp.state = state;
+      mpRenderHeader(state); mpApplyClaims(state); mpRenderTurn(state);
+      document.getElementById('mp-host-row').classList.toggle('hidden', !(mp.isHost && state.status === 'playing'));
+    }
+
+    // ---------- Online results ----------
+    function showMpEnd(state) {
+      stopPolling();
+      const players = Object.values(state.players).filter(p => p.role === 'player');
+      const claims = state.claims || {};
+      const scores = {}; players.forEach(p => scores[p.id] = 0);
+      for (const c of Object.values(claims)) if (scores[c.by] != null) scores[c.by]++;
+      const areaOf = (pid) => { let s = 0; for (const [c, info] of Object.entries(claims)) if (info.by === pid) s += (areaByName[c] || 0); return s; };
+      const ranked = players.slice().sort((a, b) => (scores[b.id] - scores[a.id]) || (areaOf(b.id) - areaOf(a.id)));
+      const topScore = ranked.length ? scores[ranked[0].id] : 0;
+      const winners = ranked.filter(p => scores[p.id] === topScore && topScore > 0);
+
+      const banner = document.getElementById('mpe-banner');
+      if (topScore === 0) { banner.textContent = 'המשחק הסתיים'; banner.style.color = '#e2e8f0'; }
+      else if (winners.length === 1) { banner.textContent = '🏆 ' + winners[0].name + ' ניצח/ה!'; banner.style.color = colorHex(winners[0].color); }
+      else { banner.textContent = '🤝 תיקו: ' + winners.map(w => w.name).join(', '); banner.style.color = '#e2e8f0'; }
+
+      const total = (typeof totalArea !== 'undefined' && totalArea) ? totalArea : 0;
+      const rankEl = document.getElementById('mpe-ranking'); rankEl.innerHTML = '';
+      ranked.forEach((p, idx) => {
+        const card = document.createElement('div'); card.className = 'mpe-card'; card.style.borderColor = colorHex(p.color);
+        const rank = document.createElement('span'); rank.className = 'rank'; rank.textContent = (idx + 1);
+        const dot = document.createElement('span'); dot.className = 'cdot'; dot.style.background = colorHex(p.color);
+        const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = p.name + (p.id === mp.playerId ? ' (את/ה)' : '');
+        const sc = document.createElement('span'); sc.className = 'sc'; sc.style.color = colorHex(p.color); sc.textContent = scores[p.id];
+        const ar = document.createElement('span'); ar.className = 'ar'; ar.textContent = '🗺️ ' + (total ? Math.round(areaOf(p.id) / total * 100) : 0) + '%';
+        card.append(rank, dot, nm, sc, ar); rankEl.appendChild(card);
+      });
+
+      const listsEl = document.getElementById('mpe-lists'); listsEl.innerHTML = '';
+      ranked.forEach(p => {
+        const names = Object.entries(claims).filter(([, info]) => info.by === p.id).map(([c]) => (E2H[c] || c)).sort((a, b) => a.localeCompare(b, 'he'));
+        const card = document.createElement('div'); card.className = 'mpe-listcard';
+        const h = document.createElement('h4'); h.style.color = colorHex(p.color); h.textContent = p.name + ' (' + names.length + ')';
+        const chips = document.createElement('div'); chips.className = 'chips';
+        if (!names.length) { const e = document.createElement('span'); e.className = 'empty'; e.textContent = '— אין —'; chips.appendChild(e); }
+        else names.forEach(n => { const s = document.createElement('span'); s.className = 'chip'; s.textContent = n; chips.appendChild(s); });
+        card.append(h, chips); listsEl.appendChild(card);
+      });
+      showScreen('mp-end-screen');
+    }
+
+    document.getElementById('mp-end-btn').addEventListener('click', async () => {
+      if (!confirm('לסיים את המשחק?')) return;
+      try { const d = await api('/api/end', { method: 'POST', body: { code: mp.code, playerId: mp.playerId, token: mp.token } }); applyState(d.state); }
+      catch (e) { document.getElementById('mp-feedback').textContent = e.message; }
+    });
+    document.getElementById('mpe-home').addEventListener('click', () => {
+      stopPolling(); try { localStorage.removeItem('mp:last'); } catch (e) {}
+      location.href = location.origin + location.pathname;
+    });
 
     function mpRenderHeader(state) {
       const head = document.getElementById('mp-header'); head.innerHTML = '';
