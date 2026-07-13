@@ -1,4 +1,4 @@
-// POST /api/create  { name }  -> { ok, code, playerId, token, state }
+// POST /api/create  { name, vsBot }  -> { ok, code, playerId, token, botId, botToken, state }
 import { createGame, publicState } from '../lib/game.js';
 
 function getBody(req) {
@@ -10,9 +10,10 @@ function getBody(req) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'POST only' });
   try {
-    const name = (getBody(req).name || '').toString().trim().slice(0, 20) || 'מארח';
-    const { code, playerId, token, state } = await createGame(name);
-    return res.status(200).json({ ok: true, code, playerId, token, state: publicState(state) });
+    const body = getBody(req);
+    const name = (body.name || '').toString().trim().slice(0, 20) || 'מארח';
+    const { code, playerId, token, botId, botToken, state } = await createGame(name, { vsBot: !!body.vsBot });
+    return res.status(200).json({ ok: true, code, playerId, token, botId, botToken, state: publicState(state) });
   } catch (e) {
     return res.status(500).json({ ok: false, error: String((e && e.message) || e) });
   }

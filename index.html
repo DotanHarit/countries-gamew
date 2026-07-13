@@ -81,6 +81,8 @@
     }
     .btn:active { transform: scale(0.98); }
     .btn:disabled { background: var(--inactive); color: #64748b; cursor: not-allowed; }
+    .btn-bot { margin-top: 10px; background: #334155; color: #e2e8f0; }
+    .btn-bot:disabled { background: var(--inactive); color: #64748b; }
 
     .mic-note {
       font-size: 13px;
@@ -533,6 +535,7 @@
     .mpe-card .nm { flex: 1 1 auto; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .mpe-card .sc { font-size: 22px; font-weight: 900; }
     .mpe-card .ar { font-size: 12px; color: #94a3b8; white-space: nowrap; }
+    .mpe-card .meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
     #mpe-lists { width: 100%; display: flex; flex-direction: column; gap: 10px; }
     .mpe-listcard { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
     .mpe-listcard h4 { font-size: 14px; margin-bottom: 8px; }
@@ -568,6 +571,7 @@
 
         <div id="home-create">
           <button class="btn" id="create-btn" disabled>צור משחק חדש</button>
+          <button class="btn btn-bot" id="bot-btn" disabled>🤖 שחק מול המחשב</button>
         </div>
         <div id="home-join" class="hidden">
           <div class="join-code-label">הצטרפות למשחק <b id="join-code-text"></b></div>
@@ -1842,6 +1846,8 @@
       { name: 'צהוב', hex: '#eab308' },
     ];
     const colorHex = (i) => (i == null || i < 0) ? '#334155' : MP_COLORS[i].hex;
+    // Format a duration in ms as M:SS (e.g. 383000 -> "6:23").
+    const fmtDur = (ms) => { const s = Math.round((ms || 0) / 1000); const m = Math.floor(s / 60); return m + ':' + String(s % 60).padStart(2, '0'); };
 
     let clockOffset = 0;                          // serverTime - clientTime
     const serverNow = () => Date.now() + clockOffset;
@@ -1856,11 +1862,12 @@
       if (!res.ok || !data.ok) throw new Error(data.error || ('HTTP ' + res.status));
       return data;
     }
-    function saveCreds(code, playerId, token) { try { localStorage.setItem('mp:' + code, JSON.stringify({ playerId, token })); localStorage.setItem('mp:last', code); } catch (e) {} }
+    function saveCreds(code, playerId, token, bot) { try { const data = { playerId, token }; if (bot && bot.botId) { data.botId = bot.botId; data.botToken = bot.botToken; } localStorage.setItem('mp:' + code, JSON.stringify(data)); localStorage.setItem('mp:last', code); } catch (e) {} }
     function loadCreds(code) { try { return JSON.parse(localStorage.getItem('mp:' + code) || 'null'); } catch (e) { return null; } }
 
     const mpName = document.getElementById('mp-name');
     const createBtn = document.getElementById('create-btn');
+    const botBtn = document.getElementById('bot-btn');
     const joinBtn = document.getElementById('join-btn');
     const homeError = document.getElementById('home-error');
     const joinCodeText = document.getElementById('join-code-text');
@@ -1868,7 +1875,7 @@
 
     function showHomeError(msg) { homeError.textContent = msg; homeError.classList.remove('hidden'); }
     function clearHomeError() { homeError.classList.add('hidden'); homeError.textContent = ''; }
-    function refreshHomeButtons() { const ok = !!mpName.value.trim(); createBtn.disabled = !ok; joinBtn.disabled = !ok; }
+    function refreshHomeButtons() { const ok = !!mpName.value.trim(); createBtn.disabled = !ok; joinBtn.disabled = !ok; if (botBtn) botBtn.disabled = !ok; }
     mpName.addEventListener('input', refreshHomeButtons);
 
     createBtn.addEventListener('click', async () => {
@@ -1879,6 +1886,16 @@
         saveCreds(d.code, d.playerId, d.token);
         enterSession();
       } catch (e) { showHomeError('שגיאה ביצירת משחק: ' + e.message); createBtn.disabled = false; }
+    });
+
+    botBtn.addEventListener('click', async () => {
+      clearHomeError(); botBtn.disabled = true;
+      try {
+        const d = await api('/api/create', { method: 'POST', body: { name: mpName.value.trim(), vsBot: true } });
+        mp = { code: d.code, playerId: d.playerId, token: d.token, role: 'player', isHost: true, state: d.state, pollTimer: null, botId: d.botId, botToken: d.botToken };
+        saveCreds(d.code, d.playerId, d.token, { botId: d.botId, botToken: d.botToken });
+        enterSession();
+      } catch (e) { showHomeError('שגיאה ביצירת משחק: ' + e.message); botBtn.disabled = false; }
     });
 
     joinBtn.addEventListener('click', async () => {
@@ -1994,6 +2011,34 @@
       mp.state = state;
       mpRenderHeader(state); mpApplyClaims(state); mpRenderTurn(state);
       document.getElementById('mp-end-btn').classList.toggle('hidden', !(mp.isHost && state.status === 'playing'));
+      maybeBotMove(state);
+    }
+
+    // In a vs-computer game the host's client drives the bot: when it's the bot's
+    // turn it claims a random unclaimed country (or skips if none are left).
+    async function maybeBotMove(state) {
+      if (!mp.botId || !mp.botToken || !state || state.status !== 'playing') return;
+      if (state.startedAt && serverNow() < state.startedAt) return;      // still counting down
+      if ((state.order || [])[state.turn || 0] !== mp.botId) return;     // not the bot's turn
+      if (mp.botMoving) return;                                          // already acting
+      mp.botMoving = true;
+      const pool = (typeof OFFICIAL !== 'undefined' && OFFICIAL.size)
+        ? [...OFFICIAL].filter(n => !state.claims[n]) : [];
+      const pick = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+      const delay = 700 + Math.floor(Math.random() * 900);              // brief "thinking" pause
+      setTimeout(async () => {
+        // Re-check it's still the bot's turn (nothing raced ahead of us).
+        const s = mp.state;
+        if (!s || s.status !== 'playing' || (s.order || [])[s.turn || 0] !== mp.botId) { mp.botMoving = false; return; }
+        try {
+          const path = pick ? '/api/claim' : '/api/skip';
+          const body = { code: mp.code, playerId: mp.botId, token: mp.botToken };
+          if (pick) body.country = pick;
+          const d = await api(path, { method: 'POST', body });
+          mp.botMoving = false;
+          applyState(d.state);
+        } catch (e) { mp.botMoving = false; }
+      }, delay);
     }
 
     // ---------- Online results ----------
@@ -2021,8 +2066,11 @@
         const dot = document.createElement('span'); dot.className = 'cdot'; dot.style.background = colorHex(p.color);
         const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = p.name + (p.id === mp.playerId ? ' (את/ה)' : '');
         const sc = document.createElement('span'); sc.className = 'sc'; sc.style.color = colorHex(p.color); sc.textContent = scores[p.id];
-        const ar = document.createElement('span'); ar.className = 'ar'; ar.textContent = '🗺️ ' + (total ? Math.round(areaOf(p.id) / total * 100) : 0) + '%';
-        card.append(rank, dot, nm, sc, ar); rankEl.appendChild(card);
+        const meta = document.createElement('span'); meta.className = 'meta';
+        const arS = document.createElement('span'); arS.className = 'ar'; arS.textContent = '🗺️ ' + (total ? Math.round(areaOf(p.id) / total * 100) : 0) + '%';
+        const tmS = document.createElement('span'); tmS.className = 'ar'; tmS.textContent = '⏱ ' + fmtDur((state.turnTime || {})[p.id] || 0);
+        meta.append(arS, tmS);
+        card.append(rank, dot, nm, sc, meta); rankEl.appendChild(card);
       });
 
       const listsEl = document.getElementById('mpe-lists'); listsEl.innerHTML = '';
@@ -2291,7 +2339,7 @@
           try {
             const d = await api('/api/join', { method: 'POST', body: { code: last, name: 'שחקן', playerId: creds.playerId, token: creds.token } });
             if (d.reconnected) {
-              mp = { code: last, playerId: d.playerId, token: d.token, role: d.role, isHost: (d.state.hostId === d.playerId), state: d.state, pollTimer: null };
+              mp = { code: last, playerId: d.playerId, token: d.token, role: d.role, isHost: (d.state.hostId === d.playerId), state: d.state, pollTimer: null, botId: creds.botId || null, botToken: creds.botToken || null };
               enterSession();
             }
           } catch (e) { /* game gone/expired — just show home */ }

@@ -1,7 +1,7 @@
 // POST /api/skip  { code, playerId, token }  -> { ok, state, serverTime }
 // Pass your turn. When every active player skips in a row, the game ends.
 import { updateGame, getGame } from '../lib/redis.js';
-import { publicState } from '../lib/game.js';
+import { publicState, accrueTurn, resetTurnClock } from '../lib/game.js';
 
 function getBody(req) {
   if (req.body && typeof req.body === 'object') return req.body;
@@ -30,11 +30,13 @@ export default async function handler(req, res) {
       const currentId = (state.order || [])[state.turn || 0];
       if (currentId !== me.id) throw fail(409, 'not your turn');
       state.consecutiveSkips = (state.consecutiveSkips || 0) + 1;
+      accrueTurn(state);      // bank this player's turn time
       if (state.consecutiveSkips >= (state.order || []).length) {
         state.status = 'ended';
         state.endedAt = Date.now();
       } else {
         advanceTurn(state);
+        resetTurnClock(state);
       }
     });
     if (result.notFound) return res.status(404).json({ ok: false, error: 'game not found' });
