@@ -30,6 +30,8 @@ export default async function handler(req, res) {
       state.turn = 0;
       state.status = 'playing';
       state.startedAt = Date.now() + 3000;   // 3s countdown, synced via startedAt
+      state.turnTime = {};                   // per-player accumulated turn time (ms)
+      state.turnStartedAt = state.startedAt;  // first player's turn clock starts when countdown ends
     });
     if (result.notFound) return res.status(404).json({ ok: false, error: 'game not found' });
 

@@ -533,6 +533,7 @@
     .mpe-card .nm { flex: 1 1 auto; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .mpe-card .sc { font-size: 22px; font-weight: 900; }
     .mpe-card .ar { font-size: 12px; color: #94a3b8; white-space: nowrap; }
+    .mpe-card .meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
     #mpe-lists { width: 100%; display: flex; flex-direction: column; gap: 10px; }
     .mpe-listcard { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
     .mpe-listcard h4 { font-size: 14px; margin-bottom: 8px; }
@@ -1842,6 +1843,8 @@
       { name: 'צהוב', hex: '#eab308' },
     ];
     const colorHex = (i) => (i == null || i < 0) ? '#334155' : MP_COLORS[i].hex;
+    // Format a duration in ms as M:SS (e.g. 383000 -> "6:23").
+    const fmtDur = (ms) => { const s = Math.round((ms || 0) / 1000); const m = Math.floor(s / 60); return m + ':' + String(s % 60).padStart(2, '0'); };
 
     let clockOffset = 0;                          // serverTime - clientTime
     const serverNow = () => Date.now() + clockOffset;
@@ -2021,8 +2024,11 @@
         const dot = document.createElement('span'); dot.className = 'cdot'; dot.style.background = colorHex(p.color);
         const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = p.name + (p.id === mp.playerId ? ' (את/ה)' : '');
         const sc = document.createElement('span'); sc.className = 'sc'; sc.style.color = colorHex(p.color); sc.textContent = scores[p.id];
-        const ar = document.createElement('span'); ar.className = 'ar'; ar.textContent = '🗺️ ' + (total ? Math.round(areaOf(p.id) / total * 100) : 0) + '%';
-        card.append(rank, dot, nm, sc, ar); rankEl.appendChild(card);
+        const meta = document.createElement('span'); meta.className = 'meta';
+        const arS = document.createElement('span'); arS.className = 'ar'; arS.textContent = '🗺️ ' + (total ? Math.round(areaOf(p.id) / total * 100) : 0) + '%';
+        const tmS = document.createElement('span'); tmS.className = 'ar'; tmS.textContent = '⏱ ' + fmtDur((state.turnTime || {})[p.id] || 0);
+        meta.append(arS, tmS);
+        card.append(rank, dot, nm, sc, meta); rankEl.appendChild(card);
       });
 
       const listsEl = document.getElementById('mpe-lists'); listsEl.innerHTML = '';

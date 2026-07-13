@@ -1,7 +1,7 @@
 // POST /api/end  { code, playerId, token }  -> { ok, state, serverTime }
 // Host ends the game.
 import { updateGame, getGame } from '../lib/redis.js';
-import { publicState } from '../lib/game.js';
+import { publicState, accrueTurn } from '../lib/game.js';
 
 function getBody(req) {
   if (req.body && typeof req.body === 'object') return req.body;
@@ -22,6 +22,7 @@ export default async function handler(req, res) {
       if (!me || me.token !== b.token) throw fail(403, 'not authorized');
       if (me.id !== state.hostId) throw fail(403, 'only the host can end the game');
       if (state.status === 'ended') return;
+      if (state.status === 'playing') accrueTurn(state);   // bank the current player's time
       state.status = 'ended';
       state.endedAt = Date.now();
     });
