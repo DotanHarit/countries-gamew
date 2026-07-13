@@ -575,7 +575,6 @@
         </div>
 
         <p id="home-error" class="mp-error hidden"></p>
-        <p class="mic-note">🎤 דורש מיקרופון ו‑Chrome, דרך HTTPS.</p>
       </div>
     </section>
 
@@ -1943,7 +1942,12 @@
         el.textContent = rem > 0 ? rem : 'צא!';
         if (rem <= 0) {
           clearInterval(mp.cdTimer); mp.cdTimer = null;
-          setTimeout(() => document.getElementById('mp-countdown').classList.add('hidden'), 500);
+          // Reveal the gameplay UI immediately (don't wait for the next poll),
+          // so the input + auto-mic appear right when the countdown ends.
+          setTimeout(() => {
+            document.getElementById('mp-countdown').classList.add('hidden');
+            if (mp.state) mpRenderAll(mp.state);
+          }, 450);
         }
       };
       tick();
@@ -2084,22 +2088,40 @@
       head.appendChild(rem);
     }
 
+    function mpIsMyTurnNow() {
+      const s = mp.state;
+      if (!s || s.status !== 'playing') return false;
+      if (s.startedAt && serverNow() < s.startedAt) return false;
+      const me = s.players[mp.playerId];
+      if (!me || me.role !== 'player') return false;
+      return (s.order || [])[s.turn || 0] === mp.playerId;
+    }
+    function mpDisarmMic() { mp.micArmed = false; if (mpListening) mpStopListen(); }
+
     function mpRenderTurn(state) {
       const banner = document.getElementById('mp-banner');
       const row = document.getElementById('mp-input-row');
       const me = state.players[mp.playerId];
-      if (state.status === 'ended') { banner.textContent = '🏁 המשחק הסתיים'; banner.style.color = '#e2e8f0'; row.classList.add('hidden'); return; }
       const order = state.order || []; const curId = order[state.turn || 0];
       const inCountdown = state.startedAt && serverNow() < state.startedAt;
-      if (!me || me.role === 'viewer') { banner.textContent = '👀 את/ה צופה'; banner.style.color = '#94a3b8'; row.classList.add('hidden'); return; }
-      if (inCountdown) { banner.textContent = 'מתכוננים…'; row.classList.add('hidden'); return; }
+
+      if (state.status === 'ended') { banner.textContent = '🏁 המשחק הסתיים'; banner.style.color = '#e2e8f0'; row.classList.add('hidden'); mpDisarmMic(); return; }
+      if (!me || me.role === 'viewer') { banner.textContent = '👀 את/ה צופה'; banner.style.color = '#94a3b8'; row.classList.add('hidden'); mpDisarmMic(); return; }
+      if (inCountdown) { banner.textContent = 'מתכוננים…'; row.classList.add('hidden'); mpDisarmMic(); return; }
+
       if (curId === mp.playerId) {
-        banner.textContent = '🎤 תורך! אמור/י או הקלד/י מדינה'; banner.style.color = colorHex(me.color);
+        banner.textContent = '🎤 תורך! דבר/י או הקלד/י מדינה'; banner.style.color = colorHex(me.color);
         row.classList.remove('hidden');
+        // Auto-start the mic when the turn becomes mine (once per turn).
+        if (!mp.micArmed) {
+          mp.micArmed = true;
+          setTimeout(() => { if (mpIsMyTurnNow() && !mpListening) mpStartListen(); }, 250);
+        }
       } else {
         const cp = state.players[curId];
         banner.textContent = 'תור של ' + (cp ? cp.name : ''); banner.style.color = cp ? colorHex(cp.color) : '';
         row.classList.add('hidden');
+        mpDisarmMic();
       }
     }
 
@@ -2148,7 +2170,12 @@
         }
       };
       mpRec.onend = () => { mpListening = false; mpMicUI(); };
-      mpRec.onerror = () => {};
+      mpRec.onerror = (e) => {
+        mpListening = false; mpMicUI();
+        if (e && (e.error === 'not-allowed' || e.error === 'service-not-allowed')) {
+          document.getElementById('mp-feedback').textContent = 'לחצ/י על 🎤 כדי לאפשר מיקרופון';
+        }
+      };
     }
     function mpStartListen() { if (!mpRec) mpSetupRec(); if (!mpRec) return; try { mpRec.start(); mpListening = true; mpMicUI(); } catch (e) {} }
     function mpStopListen() { if (mpRec) { try { mpRec.stop(); } catch (e) {} } mpListening = false; mpMicUI(); }
